@@ -1,0 +1,9 @@
+{
+  "name": "mindgap",
+  "displayName": "mindgap Knowledge Graph",
+  "version": "0.1.0",
+  "description": "Local org-roam-style knowledge graph (SQLite) with paper-ingest + loop skills and an MCP server",
+  "author": { "name": "J. Michael Burgess" },
+  "license": "MIT",
+  "keywords": ["knowledge-graph", "mindgap", "org-roam", "arxiv", "research"]
+}

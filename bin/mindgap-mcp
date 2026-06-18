@@ -1,0 +1,6 @@
+#!/bin/sh
+# Run the mindgap MCP server from a source checkout without installing.
+SELF=$0
+while [ -L "$SELF" ]; do SELF=$(readlink "$SELF"); done
+REPO=$(CDPATH= cd -- "$(dirname -- "$SELF")/.." && pwd)
+PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m mindgap.mcp "$@"

@@ -1,0 +1,80 @@
+{
+  "created_by": "seed",
+  "nodes": [
+    {
+      "id": "knowledge-graph",
+      "title": "Knowledge Graph",
+      "type": "concept",
+      "body": "Graph of typed nodes and edges capturing what we know. Mindmap itself is one; see [[mindmap]] and the [[transformer]] literature it can index.",
+      "tags": ["graphs", "meta"]
+    },
+    {
+      "id": "wiki-link",
+      "title": "Wiki-link",
+      "type": "definition",
+      "body": "A `[[node-id]]` reference inside a node body. Auto-creates a `mentions` edge, stubbing the target if missing (org-roam behavior).",
+      "tags": ["syntax"]
+    },
+    {
+      "id": "mindmap",
+      "title": "Mindmap",
+      "type": "software",
+      "body": "This tool: stdlib-only Python CLI + web UI over SQLite for local research notes.",
+      "tags": ["tooling", "internal"]
+    },
+    {
+      "id": "force-graph",
+      "title": "force-graph",
+      "type": "repo",
+      "body": "Canvas force-directed graph renderer used by the mindmap web UI (2D mode).",
+      "tags": ["frontend", "visualization"],
+      "urls": [
+        {"label": "github.com/vasturiano/force-graph", "url": "https://github.com/vasturiano/force-graph", "kind": "github"}
+      ]
+    },
+    {
+      "id": "research-wiki-home",
+      "title": "Research Wiki Home",
+      "type": "page",
+      "body": "Team Confluence space landing page for research notes.",
+      "tags": ["confluence"],
+      "urls": [
+        {"label": "wiki.example.com/RES", "url": "https://wiki.example.com/wiki/spaces/RES/overview", "kind": "confluence"}
+      ]
+    },
+    {
+      "id": "transformer",
+      "title": "Attention Is All You Need",
+      "type": "paper",
+      "body": "Introduced the Transformer architecture: attention-only sequence transduction, no recurrence.",
+      "tags": ["ml", "nlp"],
+      "urls": [
+        {"label": "arxiv.org/1706.03762", "url": "https://arxiv.org/abs/1706.03762", "kind": "arxiv"}
+      ]
+    },
+    {
+      "id": "jane-doe",
+      "title": "Jane Doe",
+      "type": "person",
+      "body": "Research engineer; maintains the wiki and [[force-graph]] integration.",
+      "tags": ["people"]
+    },
+    {
+      "id": "research-team",
+      "title": "Research Team",
+      "type": "team",
+      "body": "Owns the research wiki and reading list.",
+      "tags": ["people"]
+    }
+  ],
+  "edges": [
+    {"src": "wiki-link", "dst": "knowledge-graph", "rel": "part_of"},
+    {"src": "mindmap", "dst": "knowledge-graph", "rel": "implements"},
+    {"src": "mindmap", "dst": "force-graph", "rel": "depends_on"},
+    {"src": "research-wiki-home", "dst": "research-team", "rel": "part_of"},
+    {"src": "research-wiki-home", "dst": "transformer", "rel": "cites"},
+    {"src": "jane-doe", "dst": "research-team", "rel": "part_of"},
+    {"src": "jane-doe", "dst": "research-wiki-home", "rel": "relates_to"},
+    {"src": "transformer", "dst": "knowledge-graph", "rel": "relates_to", "weight": 0.5}
+  ]
+}

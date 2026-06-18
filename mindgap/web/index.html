@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mindgap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Hanken+Grotesk:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<script src="https://unpkg.com/force-graph"></script>
+<script src="https://unpkg.com/3d-force-graph"></script>
+<script src="https://unpkg.com/marked/lib/marked.umd.js"></script>
+<link rel="icon" href="data:,">
+<script src="https://unpkg.com/dompurify/dist/purify.min.js"></script>
+<script src="https://unpkg.com/d3"></script>
+<script>window.__d3f = window.d3;</script>
+<script src="/cluster.js"></script>
+</head>
+<body>
+<header id="header">
+  <div class="row">
+    <h1 class="brand">mind<span>gap</span></h1>
+    <input id="search" type="search" placeholder="search nodes…" autocomplete="off">
+    <input id="tag-filter" type="text" placeholder="tag" autocomplete="off">
+    <div class="seg" id="mode-toggle">
+      <button id="mode-2d" class="active">2D</button>
+      <button id="mode-3d">3D</button>
+    </div>
+    <button id="focus-reset" class="ghost hidden" title="reset focus (Esc)">&#9678; unfocus</button>
+    <button id="settings-toggle" class="ghost" title="settings">&#9881; settings</button>
+  </div>
+  <div class="row">
+    <div id="type-chips"></div>
+    <div id="stats" class="mono"></div>
+  </div>
+</header>
+
+<main id="graph"></main>
+
+<div id="empty-hint" class="hidden">
+  <h2>nothing here yet</h2>
+  <p>Add your first node:</p>
+  <pre>mindgap add --title "My first concept" --tags research</pre>
+  <p>or bulk-load with <code>mindgap ingest FILE</code>, then refresh.</p>
+</div>
+
+<aside id="sidebar" class="hidden"></aside>
+<aside id="settings" class="hidden"></aside>
+<aside id="legend" class="hidden"></aside>
+
+<script src="/app.js"></script>
+</body>
+</html>

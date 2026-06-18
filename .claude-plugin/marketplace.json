@@ -1,0 +1,9 @@
+{
+  "name": "mindgap",
+  "owner": { "name": "J. Michael Burgess" },
+  "plugins": [
+    { "name": "mindgap",
+      "source": "./mindgap-plugin",
+      "description": "Local knowledge graph + paper/loop skills + MCP server" }
+  ]
+}

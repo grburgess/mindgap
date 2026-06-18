@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=62.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mindgap"
+version = "0.1.0"
+description = "Local org-roam-style knowledge graph (SQLite, stdlib-only, web UI + MCP + loop skills)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "J. Michael Burgess" }]
+dependencies = []
+
+[project.scripts]
+mindgap = "mindgap.cli:main"
+mindgap-mcp = "mindgap.mcp:main"
+
+[tool.setuptools.packages.find]
+include = ["mindgap*"]
+
+[tool.setuptools.package-data]
+mindgap = ["web/*", "seed.json", "loops/**/*"]
