@@ -28,7 +28,7 @@ Pick one. All paths put `mindgap` (and `mindgap-mcp`) on your PATH and store dat
 ### Claude Code plugin (skills + MCP)
     /plugin marketplace add grburgess/mindgap
     /plugin install mindgap
-Registers the `mindgap` MCP server and the `paper-to-mindmap`, `arxiv-explainer`, and `loop-system` skills.
+Registers the `mindgap` MCP server and the `paper-to-mindmap`, `arxiv-explainer`, `papers-library`, and `loop-system` skills.
 (After a pip/pipx install, register the MCP directly with `claude mcp add mindgap mindgap-mcp`;
 for a source checkout the repo's `.mcp.json` already points Claude Code at `./bin/mindgap-mcp`.)
 
@@ -111,6 +111,14 @@ Prompts you can hand to Claude directly (once the plugin is installed):
 ## Paper explainers
 
 The bundled `arxiv-explainer` skill turns a paper into a richly animated, narrated HTML explainer — figures extracted from the PDF, a self-contained dark theme — and ingests it into your graph. Just tell Claude `explain <arXiv link>` (or point it at a local PDF).
+
+## Import a Papers library
+
+Mine your [Papers](https://www.papersapp.com/) (ReadCube) reference library into the graph: export it to BibTeX or RIS (Papers → Settings → Export) and tell Claude:
+
+    "import my Papers library from <path-to-export.bib>"
+
+The bundled `papers-library` skill parses the export (stdlib, no deps), ingests each paper as a node (deduped against the graph, evidence-linked), discovers related papers not yet in your library, and seeds ideas — handing off to the `paper-links` / `implementation-ideation` loops for depth.
 
 ## Schema overview
 
