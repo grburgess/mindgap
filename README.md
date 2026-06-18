@@ -2,6 +2,8 @@
 
 A local, org-roam-style knowledge graph for research and project knowledge: concepts, definitions, software, repos, Confluence pages, arXiv papers, people, teams. Nodes are markdown with `[[wiki-links]]` that auto-create edges; every node can carry outbound URLs. Curated by hand via CLI + web UI, and grown over time by autonomous agent loop sessions.
 
+<p align="center"><img src="assets/demo.gif" alt="mindgap web UI — force-directed knowledge graph spreading into clusters" width="900"></p>
+
 Stdlib-only Python 3.10 — no pip installs. Data lives in a single SQLite file.
 
 ## Install
