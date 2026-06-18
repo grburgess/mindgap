@@ -94,6 +94,8 @@ Bundled templates:
   strategy each pass. Schedule it unattended via the generated `CRON.md` (launchd/cron).
 - **paper-discovery** — one-shot batch discovery of papers for a topic.
 - **paper-links** — densify the graph by finding missing links between existing papers.
+- **implementation-ideation** — mine the graph's growing connections for buildable ideas, then *adversarially refute* the infeasible ones; only vetted ideas (each with an MVP sketch) are ingested.
+- **author-graph** — build a `person`-node graph of the researchers behind the work, with their *resolved* GitHub / homepage / Scholar links and co-author connections.
 
 Share a loop you've built (strips your accumulated state):
     mindgap loop export my-watch              # -> ./my-watch-template/
@@ -103,6 +105,8 @@ Prompts you can hand to Claude directly (once the plugin is installed):
 - "set up an arxiv-weekly loop watching <your topics> and run the first pass"
 - "continue the <name> loop"
 - "export the <name> loop as a template I can share"
+- "ideate implementations from the growing connections in my <name> graph, and refute the ones that aren't feasible" (implementation-ideation)
+- "build a graph of the authors doing <your topics> work, with their github pages" (author-graph)
 
 ## Paper explainers
 
