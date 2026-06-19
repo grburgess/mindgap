@@ -4,6 +4,20 @@ A local, org-roam-style knowledge graph for research and project knowledge: conc
 
 <p align="center"><img src="assets/demo.gif" alt="mindgap web UI — force-directed knowledge graph spreading into clusters" width="900"></p>
 
+## Quickstart
+
+    pipx install git+https://github.com/grburgess/mindgap.git
+    mindgap init      # create ~/.mindgap/mindgap.db + a small demo graph
+    mindgap serve     # open the web UI at http://localhost:8765
+
+The seeded graph is just a demo to show the shape. **To start your own, clear it** — the database recreates itself empty on next use:
+
+    rm ~/.mindgap/mindgap.db
+    mindgap add --title "My first concept" --tags research   # then grow it via the CLI, the web UI, or MCP
+
+(Don't re-run `mindgap init` after clearing — that re-seeds the demo. Or point `MINDGAP_DB` at a new path to keep the demo and start a separate graph.)
+
+
 Stdlib-only Python 3.10 — no pip installs. Data lives in a single SQLite file.
 
 ## Install
