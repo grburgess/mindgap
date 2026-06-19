@@ -67,6 +67,20 @@ mindgap serve [--port 8765] [--no-open]
 
 The UI is vanilla JS with no build step, drawing `force-graph`/`3d-force-graph`, `d3`, `marked`, and `dompurify` from CDNs. Community detection and hull geometry live in `web/cluster.js`. (3D node labels are intentionally omitted: a CDN `three` global can't be version-matched to the one `3d-force-graph` bundles, so 3D leans on color + legend + hover instead.)
 
+## A tour of the UI
+
+**Topic clusters (2D).** Color nodes by community, then flip on **Topic repulsion** — a cohesion force pulls each topic into its own region.
+
+![2D topic clusters](assets/ui-2d.gif)
+
+**3D mode.** The same graph in three dimensions — drag to orbit, scroll to zoom.
+
+![3D mode](assets/ui-3d.gif)
+
+**Dark themes.** Five built-in dark themes — Editorial, Midnight, Graphite, Aubergine, Carbon — switched live.
+
+![dark themes](assets/ui-themes.gif)
+
 ## MCP server
 
 For agents, `mindgap/mcp.py` exposes the graph as an [MCP](https://modelcontextprotocol.io) server over stdio — stdlib-only (newline-delimited JSON-RPC 2.0, no pip deps). Source checkouts: registered in [`.mcp.json`](.mcp.json) as `./bin/mindgap-mcp`. pip/pipx installs: `claude mcp add mindgap mindgap-mcp`.
