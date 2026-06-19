@@ -18,7 +18,7 @@ const TYPE_COLORS = {
 const SETTINGS_DEFAULTS = Object.freeze({
   charge: -260, linkDist: 55, linkStrength: 0.3, velocityDecay: 0.32, collide: true, // physics
   labelMode: 'hubs', linkOpacity: 0.30, arrows: true,                                // visual
-  colorBy: 'type', showHulls: true, showClusterLabels: true,                         // clusters
+  colorBy: 'type', showHulls: true, showClusterLabels: true, clusterForce: false,    // clusters
   theme: 'editorial',                                                                // appearance
 });
 function loadSettings() {
@@ -219,6 +219,36 @@ function drawClusterLabels(ctx, scale) {
   }
 }
 
+// custom force: pull each node toward its community's centroid so topics group into
+// spatially separate clusters (the global charge then pushes the groups apart). Pure
+// arithmetic on vx/vy[/vz] — no quadtree/octree dep — so it is safe in both 2D and 3D.
+function makeClusterForce(strength) {
+  let nodes = [];
+  function force(alpha) {
+    const C = state.clusters;
+    if (!C) return;
+    const cen = new Map();                          // community idx -> running centroid
+    for (const n of nodes) {
+      const c = C.byId.get(n.id);
+      if (c == null) continue;
+      let e = cen.get(c);
+      if (!e) { e = { x: 0, y: 0, z: 0, n: 0 }; cen.set(c, e); }
+      e.x += n.x; e.y += n.y; e.z += (n.z || 0); e.n++;
+    }
+    for (const e of cen.values()) { e.x /= e.n; e.y /= e.n; e.z /= e.n; }
+    const k = alpha * strength;
+    for (const n of nodes) {
+      const e = cen.get(C.byId.get(n.id));
+      if (!e) continue;
+      n.vx += (e.x - n.x) * k;
+      n.vy += (e.y - n.y) * k;
+      if (n.z != null) n.vz += (e.z - n.z) * k;
+    }
+  }
+  force.initialize = (n) => { nodes = n; };
+  return force;
+}
+
 function applyForces(g) {
   const s = state.settings, is3d = state.mode === '3d';
   g.d3Force('charge').strength(s.charge);
@@ -230,6 +260,8 @@ function applyForces(g) {
   g.d3Force('collide', !is3d && s.collide && d3f && d3f.forceCollide
     ? d3f.forceCollide((n) => Math.sqrt(nodeVal(n)) * g.nodeRelSize() + 4).iterations(2)
     : null);
+  // topic-cluster cohesion (2D + 3D): groups same-community nodes so topics separate
+  g.d3Force('cluster', s.clusterForce && state.clusters ? makeClusterForce(0.45) : null);
 }
 
 function renderGraph() {
@@ -636,6 +668,7 @@ function renderSettings() {
       <button class="seg-toggle ${s.colorBy === 'community' ? 'on' : ''}" id="set-colorby">Color by: <b>${s.colorBy}</b></button>
       <button class="seg-toggle ${s.showHulls ? 'on' : ''}" data-key="showHulls" data-kind="cluster">Hull blobs: <b>${s.showHulls ? 'on' : 'off'}</b></button>
       <button class="seg-toggle ${s.showClusterLabels ? 'on' : ''}" data-key="showClusterLabels" data-kind="cluster">Cluster labels: <b>${s.showClusterLabels ? 'on' : 'off'}</b></button>
+      <button class="seg-toggle ${s.clusterForce ? 'on' : ''}" data-key="clusterForce" data-kind="physics">Topic repulsion: <b>${s.clusterForce ? 'on' : 'off'}</b></button>
     </div>
     <div class="actions"><button id="set-reset">Reset to defaults</button></div>`;
   $('#settings').classList.remove('hidden');
