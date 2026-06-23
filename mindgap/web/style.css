@@ -509,6 +509,19 @@ button.ghost.active { border-color: var(--green); color: var(--green); }
 }
 .tl-play:hover { border-color: var(--green); }
 .tl-readout { color: var(--dim); }
+.tl-res {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.tl-res:hover { border-color: var(--green); color: var(--text); }
 .tl-track {
   position: relative;
   display: flex;

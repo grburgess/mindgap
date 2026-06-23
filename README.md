@@ -96,6 +96,14 @@ The UI is vanilla JS with no build step, drawing `force-graph`/`3d-force-graph`,
 
 ![dark themes](assets/ui-themes.gif)
 
+**Timeline.** Scrub the playhead or hit ▶ to watch the graph grow over time — at day / week / month resolution.
+
+![timeline](assets/ui-timeline.gif)
+
+**Quick switcher.** `Cmd/Ctrl-O` to fuzzy-jump to any node by title.
+
+![quick switcher](assets/ui-switcher.gif)
+
 ## MCP server
 
 For agents, `mindgap/mcp.py` exposes the graph as an [MCP](https://modelcontextprotocol.io) server over stdio — stdlib-only (newline-delimited JSON-RPC 2.0, no pip deps). Source checkouts: registered in [`.mcp.json`](.mcp.json) as `./bin/mindgap-mcp`. pip/pipx installs: `claude mcp add mindgap mindgap-mcp`.

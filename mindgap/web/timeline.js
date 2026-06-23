@@ -1,28 +1,44 @@
-/* mindgap — timeline strip: per-day histogram of node created_at + draggable
-   playhead + ▶ play that animates a time cutoff. Pure binning (bins) is testable in
-   isolation; render/scrub/play own the DOM. No deps. Colors come from CSS theme tokens. */
+/* mindgap — timeline strip: histogram of node created_at + draggable playhead +
+   ▶ play that animates a time cutoff, with adjustable bin resolution (day/week/month).
+   Pure binning (bins) is testable in isolation; render/scrub/play own the DOM. No deps.
+   Colors come from CSS theme tokens. */
 'use strict';
 (function () {
-  const DAY = 86400000;
-  const dayKey = (t) => { const d = new Date(t); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); };
+  const DAY = 86400000, WEEK = 7 * DAY;
+  const GRANS = ['day', 'week', 'month'];
   const parse = (n) => { const t = Date.parse(n && n.created_at); return Number.isFinite(t) ? t : null; };
   const fmt = (t) => new Date(t).toISOString().slice(0, 10);
 
-  // pure: nodes -> [{day, count}] one bucket per calendar day (UTC), gap-filled, ascending.
-  function bins(nodes) {
+  // bucket-start key for a timestamp at the given resolution (all UTC)
+  function keyOf(t, gran) {
+    const d = new Date(t);
+    if (gran === 'month') return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+    const day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    if (gran === 'week') { const dow = (d.getUTCDay() + 6) % 7; return day - dow * DAY; }  // Monday start
+    return day;
+  }
+  // start of the bucket AFTER key (for gap-fill + last-bucket end)
+  function nextKey(k, gran) {
+    if (gran === 'week') return k + WEEK;
+    if (gran === 'month') { const d = new Date(k); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); }
+    return k + DAY;
+  }
+
+  // pure: nodes -> [{day, count}] one bucket per resolution unit, gap-filled, ascending.
+  function bins(nodes, gran = 'day') {
     const counts = new Map();
-    for (const n of nodes || []) { const t = parse(n); if (t == null) continue; const k = dayKey(t); counts.set(k, (counts.get(k) || 0) + 1); }
+    for (const n of nodes || []) { const t = parse(n); if (t == null) continue; const k = keyOf(t, gran); counts.set(k, (counts.get(k) || 0) + 1); }
     if (!counts.size) return [];
-    const days = [...counts.keys()].sort((a, b) => a - b);
-    const out = [];
-    for (let d = days[0]; d <= days[days.length - 1]; d += DAY) out.push({ day: d, count: counts.get(d) || 0 });
+    const keys = [...counts.keys()].sort((a, b) => a - b);
+    const out = []; let k = keys[0]; const last = keys[keys.length - 1];
+    while (k <= last) { out.push({ day: k, count: counts.get(k) || 0 }); k = nextKey(k, gran); }
     return out;
   }
 
   // module state for the single mounted strip
-  let root, barsEl, headEl, readoutEl, playBtn, fromEl, toEl;
+  let root, barsEl, headEl, readoutEl, playBtn, resBtn, fromEl, toEl;
   let onCutoffCb = null, B = [], N = [], minT = null, maxT = null, total = 0;
-  let cutoff = null, playing = false, raf = 0, dragging = false;
+  let cutoff = null, playing = false, raf = 0, dragging = false, gran = 'day';
 
   function span() { return Math.max((maxT || 0) - (minT || 0), 1); }
   function frac(t) { return Math.min(Math.max((t - minT) / span(), 0), 1); }
@@ -34,7 +50,7 @@
     if (T == null) return total;
     let c = 0;
     // exact-timestamp count to match the graph's viewData filter (t <= cutoff); a
-    // day-granular sum would overcount nodes created later in the playhead's current day
+    // bucket-granular sum would overcount nodes created later in the playhead's current bucket
     for (const n of N) { const t = parse(n); if (t != null && t <= T) c++; }
     return c;
   }
@@ -60,10 +76,15 @@
 
   function recompute(nodes) {
     N = nodes || [];
-    B = bins(N);
+    B = bins(N, gran);
     total = N.filter((n) => parse(n) != null).length;
     minT = B.length ? B[0].day : null;
-    maxT = B.length ? B[B.length - 1].day + DAY - 1 : null;  // include the whole last day
+    maxT = B.length ? nextKey(B[B.length - 1].day, gran) - 1 : null;  // include the whole last bucket
+  }
+
+  function setGran(g) {
+    gran = g; if (resBtn) resBtn.textContent = g;
+    recompute(N); renderBars(); paintHead();   // cutoff (a timestamp) stays valid across resolutions
   }
 
   function stop() { playing = false; if (raf) cancelAnimationFrame(raf), raf = 0; if (playBtn) playBtn.textContent = '▶'; }
@@ -101,6 +122,7 @@
     el.innerHTML = `
       <div class="tl-controls">
         <button class="tl-play" title="play (cutoff min→max)">▶</button>
+        <button class="tl-res mono" title="bin resolution (day / week / month)">day</button>
         <span class="tl-readout mono"></span>
       </div>
       <div class="tl-track">
@@ -113,9 +135,11 @@
     headEl = el.querySelector('.tl-head');
     readoutEl = el.querySelector('.tl-readout');
     playBtn = el.querySelector('.tl-play');
+    resBtn = el.querySelector('.tl-res');
     fromEl = el.querySelector('.tl-from');
     toEl = el.querySelector('.tl-to');
     playBtn.onclick = () => { playing ? stop() : play(); };
+    resBtn.onclick = () => { stop(); setGran(GRANS[(GRANS.indexOf(gran) + 1) % GRANS.length]); };
     barsEl.addEventListener('pointerdown', onDown);
     barsEl.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
