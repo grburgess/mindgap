@@ -146,6 +146,7 @@ async function loadGraph() {
   state.focusRoots = new Set([...state.focusRoots].filter((id) => ids.has(id)));
   if (!state.focusRoots.size) clearFocus();
   renderGraph();
+  if (state.mode === '3d' && window.Glow3d) Glow3d.refresh();
   updateEmptyHint();
   loadStats();
   renderLegend();
@@ -349,11 +350,15 @@ function applyForces(g) {
   g.d3Force('cluster', s.clusterForce && state.clusters ? makeClusterForce(0.45) : null);
 }
 
+// passed to Glow3d (3D topic orbs) — thin getters, no coupling to app internals
+const glowCtx = { getClusters: () => state.clusters, getSettings: () => state.settings };
+
 function renderGraph() {
   if (graph && mountedMode === state.mode) {
     graph.graphData(viewData());
     return;
   }
+  if (window.Glow3d) Glow3d.teardown();
   if (graph && graph._destructor) graph._destructor();
   graphEl.innerHTML = '';
   const make = state.mode === '3d' ? ForceGraph3D : ForceGraph;
@@ -403,6 +408,7 @@ function renderGraph() {
     graph.onRenderFramePost(drawClusterLabels);
     graph.nodeCanvasObjectMode(() => 'after').nodeCanvasObject(drawLabel2d);
   }
+  if (state.mode === '3d' && window.Glow3d) Glow3d.install(graph, glowCtx);
   graph.onEngineStop(() => { if (state._needFit) { graph.zoomToFit(500, 60); state._needFit = false; } });
   state._needFit = true;
   mountedMode = state.mode;
@@ -879,6 +885,7 @@ function onSettingChange(kind) {
   } else {
     refreshStyles();
     renderLegend();
+    if (state.mode === '3d' && window.Glow3d) Glow3d.refresh();
   }
 }
 
@@ -928,7 +935,7 @@ function renderSettings() {
     <h3>clusters</h3>
     <div class="panel">
       <button class="seg-toggle ${s.colorBy === 'community' ? 'on' : ''}" id="set-colorby">Color by: <b>${s.colorBy}</b></button>
-      <button class="seg-toggle ${s.showHulls ? 'on' : ''}" data-key="showHulls" data-kind="cluster">Hull blobs: <b>${s.showHulls ? 'on' : 'off'}</b></button>
+      <button class="seg-toggle ${s.showHulls ? 'on' : ''}" data-key="showHulls" data-kind="cluster">Topic glow: <b>${s.showHulls ? 'on' : 'off'}</b></button>
       <button class="seg-toggle ${s.showClusterLabels ? 'on' : ''}" data-key="showClusterLabels" data-kind="cluster">Cluster labels: <b>${s.showClusterLabels ? 'on' : 'off'}</b></button>
       <button class="seg-toggle ${s.clusterForce ? 'on' : ''}" data-key="clusterForce" data-kind="physics">Topic repulsion: <b>${s.clusterForce ? 'on' : 'off'}</b></button>
     </div>
@@ -939,6 +946,7 @@ function renderSettings() {
     state.settings = { ...SETTINGS_DEFAULTS };
     saveSettings(); renderSettings(); applyTheme(state.settings.theme); applyForces(graph);
     state._needFit = true; graph.d3ReheatSimulation(); refreshStyles();
+    if (state.mode === '3d' && window.Glow3d) Glow3d.refresh();
   };
   $('#settings').querySelectorAll('input[type=range]').forEach((el) => {
     el.oninput = () => {
@@ -959,6 +967,7 @@ function renderSettings() {
   if (cb) cb.onclick = () => {
     state.settings.colorBy = state.settings.colorBy === 'community' ? 'type' : 'community';
     saveSettings(); renderSettings(); renderLegend(); refreshStyles();
+    if (state.mode === '3d' && window.Glow3d) Glow3d.refresh();
   };
   $('#settings').querySelectorAll('.labels-seg button').forEach((b) => {
     b.onclick = () => {
