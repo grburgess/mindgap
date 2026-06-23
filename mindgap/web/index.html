@@ -28,10 +28,12 @@
       <button id="mode-3d">3D</button>
     </div>
     <button id="focus-reset" class="ghost hidden" title="reset focus (Esc)">&#9678; unfocus</button>
+    <button id="timeline-toggle" class="ghost" title="timeline">&#9202; timeline</button>
     <button id="settings-toggle" class="ghost" title="settings">&#9881; settings</button>
   </div>
   <div class="row">
     <div id="type-chips"></div>
+    <button id="orphan-chip" class="chip" title="show only nodes with no edges">orphans (0)</button>
     <div id="stats" class="mono"></div>
   </div>
 </header>
@@ -49,6 +51,19 @@
 <aside id="settings" class="hidden"></aside>
 <aside id="legend" class="hidden"></aside>
 
+<div id="timeline-strip" class="hidden">
+  <button id="timeline-color" class="seg-toggle" title="color nodes by recency/provenance">color: <b>off</b></button>
+  <div id="timeline"></div>
+</div>
+
+<div id="switcher" class="hidden">
+  <div class="sw-box">
+    <input id="sw-input" type="text" placeholder="jump to node…" autocomplete="off" spellcheck="false">
+    <ul id="sw-results"></ul>
+  </div>
+</div>
+
+<script src="/timeline.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

@@ -78,6 +78,7 @@ mindgap serve [--port 8765] [--no-open]
 - **Search** box and **type/tag** filter chips narrow the graph live; a stats line sits in the header.
 - Click a node → **sidebar** with its markdown body (wiki-links are clickable), tags, outbound URLs (open Confluence/GitHub/arXiv in a new tab), and neighbors. Edit body/tags/urls, link to another node via a search picker, or delete — all inline.
 - **Focus mode** (double-click a node) shows its local 1-hop graph; clicking nodes, wiki-links, or neighbors while focused spreads the view ring by ring (org-roam style), and Esc or "unfocus" resets. Selecting any node flies the camera to it and highlights its neighborhood.
+- **Timeline** (clock toggle in the header) opens a bottom strip: a per-day histogram of when nodes were added, a draggable playhead + ▶ play that grows the graph over time, and a *color by recency / provenance* toggle. **Backlinks** — the sidebar shows linked mentions plus *unlinked* mentions (nodes whose text names this one) with a one-click link. **Quick switcher** (`Cmd/Ctrl-O`) fuzzy-jumps to any node. **Orphans** chip filters to disconnected nodes.
 
 The UI is vanilla JS with no build step, drawing `force-graph`/`3d-force-graph`, `d3`, `marked`, and `dompurify` from CDNs. Community detection and hull geometry live in `web/cluster.js`. (3D node labels are intentionally omitted: a CDN `three` global can't be version-matched to the one `3d-force-graph` bundles, so 3D leans on color + legend + hover instead.)
 

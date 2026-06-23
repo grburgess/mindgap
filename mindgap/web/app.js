@@ -28,6 +28,42 @@ function loadSettings() {
 function saveSettings() { localStorage.setItem('mm.settings', JSON.stringify(state.settings)); }
 const nodeVal = (n) => 1.5 + (n._deg || 0) * 1.4;   // shared by .nodeVal and collide radius
 
+// timeline color override (state.timeline.colorMode): 'recency' fades older nodes toward
+// the dim token; 'provenance' buckets by created_by. Reads CSS tokens so it survives themes.
+const PROV_COLORS = {
+  loop: '#57c7a4', skill: '#a78bfa', seed: '#e9c46a', claude: '#5aa9e6',
+  ui: '#f4a261', manual: '#9ae65a',
+};
+function provBucket(by) {
+  const s = String(by || '').toLowerCase();
+  const head = s.split(':')[0];
+  return PROV_COLORS[head] || '#8b9692';
+}
+// recency span (lo/hi created_at across state.raw) cached on loadGraph so the per-node
+// nodeColor callback never recomputes an O(N) scan every render frame.
+function recomputeRecency() {
+  const ts = state.raw.nodes.map((x) => Date.parse(x.created_at)).filter(Number.isFinite);
+  state.timeline.recencyLo = ts.length ? Math.min(...ts) : null;
+  state.timeline.recencyHi = ts.length ? Math.max(...ts) : null;
+}
+function timelineNodeColor(n) {
+  if (state.timeline.colorMode === 'provenance') return provBucket(n.created_by);
+  // recency: newest = full green token, oldest = dim, by created_at across cached span
+  const css = getComputedStyle(document.documentElement);
+  const green = (css.getPropertyValue('--green') || '#57c7a4').trim();
+  const dim = (css.getPropertyValue('--dim') || '#76847f').trim();
+  const lo = state.timeline.recencyLo, hi = state.timeline.recencyHi, t = Date.parse(n.created_at);
+  if (lo == null || hi == null) return green;
+  if (!Number.isFinite(t) || hi === lo) return green;
+  return mixHex(dim, green, (t - lo) / (hi - lo));
+}
+function mixHex(a, b, f) {
+  const p = (h) => { h = h.replace('#', ''); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+  const [r1, g1, b1] = p(a), [r2, g2, b2] = p(b);
+  const c = (x, y) => Math.round(x + (y - x) * Math.min(Math.max(f, 0), 1)).toString(16).padStart(2, '0');
+  return '#' + c(r1, r2) + c(g1, g2) + c(b1, b2);
+}
+
 // dark themes — each maps CSS custom properties (+ graph bg via --bg). Node type/community
 // colors stay fixed (they read on any dark base); themes swap chrome surfaces + accents.
 const THEMES = {
@@ -47,8 +83,11 @@ function applyTheme(name) {
 
 const state = {
   q: '', type: null, tag: '', mode: '2d',
-  raw: { nodes: [], links: [] },   // server data; links keep string source/target
+  raw: { nodes: [], links: [] },   // server data (q/type/tag-filtered); links keep string source/target
+  allNodes: [],                    // full unfiltered node set — timeline histogram bins this
   focusRoots: new Set(),           // org-roam local graph: union of roots' 1-hop rings
+  timeline: { cutoff: null, playing: false, colorMode: 'off', recencyLo: null, recencyHi: null }, // bottom strip time cutoff + node-color override
+  orphansOnly: false,              // header chip: keep only degree-0 nodes
   selected: null,
   hl: null,                        // { id, nbs:Set } — persistent highlight (selection)
   hoverHl: null,                   // transient hover highlight; overlays hl
@@ -87,7 +126,12 @@ async function loadGraph() {
   if (state.q) p.set('q', state.q);
   if (state.type) p.set('type', state.type);
   if (state.tag) p.set('tag', state.tag);
+  const filtered = !!(state.q || state.type || state.tag);
   state.raw = await api('/api/graph?' + p);
+  // timeline bins the FULL set (stable across server q/type/tag filters): when no filter
+  // is active state.raw IS the full set; otherwise fetch it once so the histogram persists
+  if (!filtered) state.allNodes = state.raw.nodes;
+  else if (!state.allNodes.length) state.allNodes = (await api('/api/graph')).nodes;
   state.clusters = Cluster.detect(state.raw.nodes, state.raw.links);
   if (state.activeCluster != null && state.activeCluster >= state.clusters.k) state.activeCluster = null;
   // top-degree hub set for label 'hubs' mode (robust to graph density)
@@ -97,6 +141,7 @@ async function loadGraph() {
     deg.set(l.target, (deg.get(l.target) || 0) + 1);
   }
   state.hubs = new Set([...deg.entries()].sort((a, b) => b[1] - a[1]).slice(0, HUB_COUNT).map((e) => e[0]));
+  recomputeRecency();
   const ids = new Set(state.raw.nodes.map((n) => n.id));
   state.focusRoots = new Set([...state.focusRoots].filter((id) => ids.has(id)));
   if (!state.focusRoots.size) clearFocus();
@@ -104,6 +149,8 @@ async function loadGraph() {
   updateEmptyHint();
   loadStats();
   renderLegend();
+  if (timelineMounted) Timeline.update(state.allNodes); // re-bin from the full unfiltered set
+  updateOrphanChip();
 }
 
 async function loadStats() {
@@ -113,9 +160,41 @@ async function loadStats() {
   $('#stats').textContent = `${n} nodes · ${e} edges`;
 }
 
+// global degree over the full server graph (orphan = degree 0 anywhere, not just in view)
+function rawDegree() {
+  const deg = new Map();
+  for (const l of state.raw.links) {
+    deg.set(l.source, (deg.get(l.source) || 0) + 1);
+    deg.set(l.target, (deg.get(l.target) || 0) + 1);
+  }
+  return deg;
+}
+function orphanCount() {
+  const deg = rawDegree();
+  return state.raw.nodes.reduce((c, n) => c + ((deg.get(n.id) || 0) === 0 ? 1 : 0), 0);
+}
+
 function viewData() {
   let nodes = state.raw.nodes;
   let links = state.raw.links;
+  // client filters compose on top of the server-side q/type/tag set (state.raw):
+  // time cutoff (created_at <= T) and orphans-only (global degree 0).
+  const cutoff = state.timeline.cutoff;
+  if (cutoff != null) {
+    nodes = nodes.filter((n) => { const t = Date.parse(n.created_at); return !Number.isFinite(t) || t <= cutoff; });
+    // links between surviving nodes only, so orphan degree below reflects the current view
+    const ids = new Set(nodes.map((n) => n.id));
+    links = links.filter((l) => ids.has(l.source) && ids.has(l.target));
+  }
+  if (state.orphansOnly) {
+    // degree over the post-cutoff links (in-view isolation), not the global graph
+    const deg = cutoff != null ? new Map() : rawDegree();
+    if (cutoff != null) for (const l of links) {
+      deg.set(l.source, (deg.get(l.source) || 0) + 1);
+      deg.set(l.target, (deg.get(l.target) || 0) + 1);
+    }
+    nodes = nodes.filter((n) => (deg.get(n.id) || 0) === 0);
+  }
   // local graph: each focus root contributes its 1-hop ring; clicks spread it.
   // roots that don't resolve to a real node (e.g. unresolved wiki-link slugs)
   // are ignored so a bad id can never blank the view
@@ -129,6 +208,11 @@ function viewData() {
     }
     nodes = nodes.filter((n) => keep.has(n.id));
     links = links.filter((l) => keep.has(l.source) && keep.has(l.target));
+  }
+  // links survive only between nodes still present after the client filters
+  if (cutoff != null || state.orphansOnly) {
+    const ids = new Set(nodes.map((n) => n.id));
+    links = links.filter((l) => ids.has(l.source) && ids.has(l.target));
   }
   const deg = new Map();
   for (const l of links) {
@@ -278,9 +362,15 @@ function renderGraph() {
     .backgroundColor(themeBg())
     .nodeColor((n) => {
       const C = state.clusters, byC = state.settings.colorBy === 'community' && C;
-      const base = byC
-        ? (C.byId.has(n.id) ? C.communities[C.byId.get(n.id)].color : '#5b6663')
-        : (TYPE_COLORS[n.type] || '#8b9692');
+      // timeline color override: when on, replace the base hue (recency/provenance);
+      // when off ('off' default) the community/type base is untouched. While a cluster is
+      // isolated the override is skipped for its members so the bright-vs-dim contrast holds.
+      const inActiveCluster = state.activeCluster != null && C && C.byId.get(n.id) === state.activeCluster;
+      const base = state.timeline.colorMode !== 'off' && !inActiveCluster
+        ? timelineNodeColor(n)
+        : (byC
+            ? (C.byId.has(n.id) ? C.communities[C.byId.get(n.id)].color : '#5b6663')
+            : (TYPE_COLORS[n.type] || '#8b9692'));
       if (state.activeCluster != null && (!C || C.byId.get(n.id) !== state.activeCluster))
         return 'rgba(91,102,99,0.18)';
       const hl = state.hoverHl || state.hl;
@@ -425,9 +515,47 @@ async function selectNode(id, { center = true } = {}) {
   return true;
 }
 
+// scan state.raw for what points at this node and what could. linked = an edge whose
+// target is this node, or another node's body has [[this-id]]. unlinked = another node's
+// body text contains this title (case-insensitive) with no existing edge either way.
+const UNLINKED_CAP = 20;
+function mentionLists(node) {
+  const id = node.id;
+  const incoming = new Set();                    // ids with an edge → this node
+  const linkedEither = new Set();                // ids with an edge in either direction
+  for (const l of state.raw.links) {
+    if (l.target === id) { incoming.add(l.source); linkedEither.add(l.source); }
+    if (l.source === id) linkedEither.add(l.target);
+  }
+  const wikiRe = new RegExp('\\[\\[\\s*' + id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\]\\]', 'i');
+  const byId = new Map(state.raw.nodes.map((n) => [n.id, n]));
+  const linkedIds = new Set(incoming);
+  for (const n of state.raw.nodes) {
+    if (n.id !== id && n.body && wikiRe.test(n.body)) linkedIds.add(n.id);
+  }
+  const linked = [...linkedIds].map((i) => byId.get(i)).filter(Boolean);
+
+  const title = (node.title || '').trim();
+  const unlinked = [];
+  if (title) {
+    const tlc = title.toLowerCase();
+    for (const n of state.raw.nodes) {
+      if (n.id === id || linkedEither.has(n.id) || linkedIds.has(n.id)) continue;
+      if (n.body && n.body.toLowerCase().includes(tlc)) unlinked.push(n);
+    }
+  }
+  return { linked, unlinked: unlinked.slice(0, UNLINKED_CAP), unlinkedMore: Math.max(0, unlinked.length - UNLINKED_CAP) };
+}
+
 function renderSidebar(node, nb) {
   const color = TYPE_COLORS[node.type] || '#8b9692';
   const others = nb.nodes.filter((n) => n.id !== node.id);
+  const ment = mentionLists(node);
+  const mentionRow = (n, withBtn) =>
+    `<li class="mention" data-node="${esc(n.id)}">
+       <i style="background:${TYPE_COLORS[n.type] || '#8b9692'}"></i>
+       <span class="mention-title">${esc(n.title || n.id)}</span>
+       ${withBtn ? `<button class="mention-link" data-link="${esc(n.id)}">Link</button>` : ''}</li>`;
   const relOf = (id) => {
     const l = nb.links.find((l) => (l.source === id && l.target === node.id) ||
                                    (l.source === node.id && l.target === id));
@@ -451,6 +579,10 @@ function renderSidebar(node, nb) {
       `<li class="neighbor" data-node="${esc(n.id)}">
          <i style="background:${TYPE_COLORS[n.type] || '#8b9692'}"></i>
          ${esc(n.title)} <span class="mono dim">${esc(relOf(n.id))}</span></li>`).join('')}</ul>` : ''}
+    ${ment.linked.length ? `<h3>linked mentions</h3><ul class="mentions">${ment.linked.map((n) =>
+      mentionRow(n, false)).join('')}</ul>` : ''}
+    ${ment.unlinked.length ? `<h3>unlinked mentions</h3><ul class="mentions">${ment.unlinked.map((n) =>
+      mentionRow(n, true)).join('')}${ment.unlinkedMore ? `<li class="mention-more mono dim">+${ment.unlinkedMore} more</li>` : ''}</ul>` : ''}
     <div class="actions">
       <button id="sb-focus">${state.focusRoots.size ? 'Spread here' : 'Focus'}</button>
       <button id="sb-edit">Edit</button>
@@ -533,6 +665,20 @@ function renderSidebar(node, nb) {
     await loadGraph();
     selectNode(node.id);
   };
+  // one-click "Link" on an unlinked mention: same /api/edge action, src = the mentioning
+  // node → this node so it becomes a linked mention; rel 'mentions'. Then refresh the panel.
+  sidebar.querySelectorAll('.mention-link').forEach((b) => {
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      await api('/api/edge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ src: b.dataset.link, dst: node.id, rel: 'mentions' }),
+      });
+      await loadGraph();
+      await selectNode(node.id);
+    };
+  });
 }
 
 function closeSidebar() {
@@ -546,7 +692,7 @@ function closeSidebar() {
 // wiki-links + neighbor clicks (delegated; sidebar re-renders often):
 // org-roam behavior — following a link focuses that node and spreads the local graph
 sidebar.addEventListener('click', async (e) => {
-  const t = e.target.closest('.wikilink, .neighbor');
+  const t = e.target.closest('.wikilink, .neighbor, .mention');
   if (!t || !t.dataset.node) return;
   const id = t.dataset.node;
   if (!(await selectNode(id))) return; // unresolved wiki-link slug — don't focus
@@ -556,12 +702,14 @@ sidebar.addEventListener('click', async (e) => {
 
 // hovering a wiki-link/neighbor previews its neighborhood in the graph
 sidebar.addEventListener('mouseover', (e) => {
-  const t = e.target.closest('.wikilink, .neighbor');
+  const t = e.target.closest('.wikilink, .neighbor, .mention');
   if (t && t.dataset.node) setHover(t.dataset.node);
 });
 sidebar.addEventListener('mouseout', (e) => {
-  const t = e.target.closest('.wikilink, .neighbor');
-  if (t) setHover(null);
+  const t = e.target.closest('.wikilink, .neighbor, .mention');
+  // only clear when the cursor actually left the row — not when moving between its
+  // children (e.g. title → Link button), which would flicker the graph highlight
+  if (t && !t.contains(e.relatedTarget)) setHover(null);
 });
 
 /* ---------- header controls ---------- */
@@ -604,6 +752,118 @@ $('#mode-2d').onclick = () => setMode('2d');
 $('#mode-3d').onclick = () => setMode('3d');
 
 $('#focus-reset').onclick = clearFocus;
+
+/* ---------- timeline strip ---------- */
+
+let timelineMounted = false;
+function onCutoff(T) {
+  state.timeline.cutoff = T;
+  if (graph) graph.graphData(viewData());
+}
+function showTimeline(on) {
+  $('#timeline-strip').classList.toggle('hidden', !on);
+  $('#timeline-toggle').classList.toggle('active', on);
+  document.body.classList.toggle('timeline-open', on); // lift the cluster legend clear of the strip
+  if (on) {
+    if (!timelineMounted) { Timeline.mount($('#timeline'), { nodes: state.allNodes, onCutoff }); timelineMounted = true; }
+    else Timeline.update(state.allNodes);
+  } else {
+    // hidden ⇒ no time filtering
+    state.timeline.cutoff = null;
+    if (graph) graph.graphData(viewData());
+  }
+}
+$('#timeline-toggle').onclick = () => showTimeline($('#timeline-strip').classList.contains('hidden'));
+
+// cycle off → recency → provenance; overrides node color without breaking community coloring
+const COLOR_MODES = ['off', 'recency', 'provenance'];
+$('#timeline-color').onclick = () => {
+  const i = COLOR_MODES.indexOf(state.timeline.colorMode);
+  state.timeline.colorMode = COLOR_MODES[(i + 1) % COLOR_MODES.length];
+  $('#timeline-color').querySelector('b').textContent = state.timeline.colorMode;
+  $('#timeline-color').classList.toggle('on', state.timeline.colorMode !== 'off');
+  refreshStyles();
+};
+
+/* ---------- orphan finder ---------- */
+
+function updateOrphanChip() {
+  const btn = $('#orphan-chip');
+  btn.textContent = `orphans (${orphanCount()})`;
+  btn.classList.toggle('active', state.orphansOnly);
+}
+$('#orphan-chip').onclick = () => {
+  state.orphansOnly = !state.orphansOnly;
+  updateOrphanChip();
+  if (graph) graph.graphData(viewData());
+};
+
+/* ---------- quick switcher (Cmd/Ctrl-O) ---------- */
+
+const qsState = { items: [], sel: 0 };
+function qsOpen() {
+  $('#switcher').classList.remove('hidden');
+  const inp = $('#sw-input');
+  inp.value = ''; qsRender('');
+  inp.focus();
+}
+function qsClose() { $('#switcher').classList.add('hidden'); }
+function qsFilter(q) {
+  const s = q.toLowerCase().trim();
+  const ns = state.raw.nodes;
+  if (!s) return ns.slice(0, 50);
+  // substring on title then id; rank earlier matches higher
+  return ns
+    .map((n) => {
+      const ti = (n.title || '').toLowerCase().indexOf(s);
+      const ii = ti < 0 ? (n.id || '').toLowerCase().indexOf(s) : -1;
+      const score = ti >= 0 ? ti : (ii >= 0 ? 1000 + ii : -1);
+      return { n, score };
+    })
+    .filter((x) => x.score >= 0)
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 50)
+    .map((x) => x.n);
+}
+function qsRender(q) {
+  qsState.items = qsFilter(q);
+  qsState.sel = 0;
+  $('#sw-results').innerHTML = qsState.items.map((n, i) =>
+    `<li class="${i === 0 ? 'sel' : ''}" data-node="${esc(n.id)}">
+       <i style="background:${TYPE_COLORS[n.type] || '#8b9692'}"></i>
+       <span class="sw-title">${esc(n.title || n.id)}</span>
+       <span class="mono dim">${esc(n.id)}</span></li>`).join('');
+}
+function qsMove(d) {
+  const lis = $('#sw-results').querySelectorAll('li');
+  if (!lis.length) return;
+  lis[qsState.sel]?.classList.remove('sel');
+  qsState.sel = (qsState.sel + d + lis.length) % lis.length;
+  const cur = lis[qsState.sel];
+  cur.classList.add('sel');
+  cur.scrollIntoView({ block: 'nearest' });
+}
+async function qsChoose() {
+  const n = qsState.items[qsState.sel];
+  if (!n) return;
+  qsClose();
+  if (await selectNode(n.id)) { if (state.focusRoots.size) spreadFocus(n.id); }
+}
+$('#sw-input').addEventListener('input', () => qsRender($('#sw-input').value));
+$('#sw-input').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); qsMove(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); qsMove(-1); }
+  else if (e.key === 'Enter') { e.preventDefault(); qsChoose(); }
+  else if (e.key === 'Escape') { e.preventDefault(); qsClose(); }
+});
+$('#sw-input').addEventListener('blur', () => setTimeout(qsClose, 120)); // allow click on a row first
+$('#sw-results').addEventListener('mousedown', (e) => {
+  const li = e.target.closest('li[data-node]');
+  if (!li) return;
+  const i = [...$('#sw-results').children].indexOf(li);
+  if (i >= 0) qsState.sel = i;
+  qsChoose();
+});
 
 /* ---------- settings drawer ---------- */
 
@@ -732,9 +992,21 @@ $('#settings-toggle').onclick = () => {
   else $('#settings').classList.add('hidden');
 };
 
+function inField(el) {
+  return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+}
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    if (!$('#settings').classList.contains('hidden')) $('#settings').classList.add('hidden');
+  // quick switcher — don't hijack typing in a field (its own input handles its keys)
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'o' || e.key === 'O') && !inField(e.target)) {
+    e.preventDefault();
+    qsOpen();
+    return;
+  }
+  // Escape cascade for overlays — but not while typing in a header field, so the
+  // input's own Escape (native clear / switcher's own handler) isn't stolen
+  if (e.key === 'Escape' && !inField(e.target)) {
+    if (!$('#switcher').classList.contains('hidden')) qsClose();
+    else if (!$('#settings').classList.contains('hidden')) $('#settings').classList.add('hidden');
     else if (state.focusRoots.size) clearFocus();
     else closeSidebar();
   }
