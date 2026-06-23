@@ -1,8 +1,14 @@
 # mindgap
 
-A local, org-roam-style knowledge graph for research and project knowledge: concepts, definitions, software, repos, Confluence pages, arXiv papers, people, teams. Nodes are markdown with `[[wiki-links]]` that auto-create edges; every node can carry outbound URLs. Curated by hand via CLI + web UI, and grown over time by autonomous agent loop sessions.
+**Give an agent a goal and a place to remember.** It loops — reading what's known, researching, writing back evidence-linked findings — and a knowledge graph grows itself across sessions. `mindgap` is that memory: a local, org-roam-style graph for research and project knowledge (concepts, definitions, software, repos, Confluence pages, arXiv papers, people, teams) that autonomous loop sessions read *before* they work and write *after* — markdown nodes densified with `[[wiki-links]]`, every node carrying its source URLs, rendered live in 2D/3D. You can hand-curate via CLI + web UI too; the agents just never stop adding.
 
 <p align="center"><img src="assets/demo.gif" alt="mindgap web UI — force-directed knowledge graph spreading into clusters" width="900"></p>
+
+## The idea
+
+> *"LLMs are exceptionally good at looping until they meet specific goals. Don't tell it what to do — give it success criteria and watch it go."* — Andrej Karpathy
+
+An agent looping toward a goal needs somewhere to look before it starts and somewhere to put what it finds. `mindgap` is that somewhere. Each session reads the relevant subgraph for context, does the work — sweep arXiv, map a repo, mine the connections for buildable ideas — then ingests new nodes and edges *with provenance*. Nothing evaporates when the context window closes: the next run builds on the last, and knowledge **compounds** instead of being re-derived. You supply the goal and the success criteria; the graph is the durable, queryable memory the loop reads and writes.
 
 ## Quickstart
 
@@ -52,6 +58,21 @@ Register the MCP at **user scope** so every Claude Code session, in any director
 ### Where data lives
 `~/.mindgap/` — `mindgap.db` and `snapshots/`. `MINDGAP_HOME` relocates the whole dir;
 `MINDGAP_DB` points at a single DB file elsewhere.
+
+## Give an agent a goal
+
+You don't drive this graph node-by-node — you point an agent at a goal and let it loop. Install the [Claude Code plugin](#claude-code-plugin-skills--mcp), then in any project just say:
+
+    "set up an arxiv-weekly loop watching <your topics> and run the first pass"
+    "continue the <name> loop"
+    "ideate buildable implementations from my <name> graph, and refute the ones that aren't feasible"
+    "build a graph of the authors doing <your topics> work, with their github pages"
+
+Every run follows the protocol in **[AGENTS.md](AGENTS.md)** — read the existing subgraph for context, research, then ingest new nodes/edges with provenance and `[[wiki-links]]`, and export a snapshot. The agent reaches the graph through the [**MCP server**](#mcp-server) (validated writes that can't silently desync) or the CLI below. Beyond loops, **every** Claude Code session can [deposit what it learned](#self-learning-capture) automatically. Then [**watch it compound**](#web-ui) — and re-run the loop tomorrow to grow it further. The pieces:
+
+- **[Agent loops](#knowledge-loops-arxiv-search--graph)** — give a goal (a topic, a library, a question); the loop runs to it and writes findings back, self-tuning each pass.
+- **[MCP server](#mcp-server)** — the read/write interface agents use, with guardrails (no partial commits, no dangling edges, provenance required).
+- **[Self-learning capture](#self-learning-capture)** — a `SessionEnd` hook that distills on-domain learnings from any session into the graph, unattended.
 
 ## CLI cheatsheet
 
