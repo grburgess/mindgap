@@ -96,7 +96,7 @@ The UI is vanilla JS with no build step, drawing `force-graph`/`3d-force-graph`,
 
 ![dark themes](assets/ui-themes.gif)
 
-**Timeline.** Scrub the playhead or hit ▶ to watch the graph grow over time — at day / week / month resolution.
+**Timeline.** Scrub the playhead or hit ▶ to watch the graph grow over time — at day / week / month resolution, with a **before / after** toggle to show only what existed then or only what's new since.
 
 ![timeline](assets/ui-timeline.gif)
 

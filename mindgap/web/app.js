@@ -86,7 +86,7 @@ const state = {
   raw: { nodes: [], links: [] },   // server data (q/type/tag-filtered); links keep string source/target
   allNodes: [],                    // full unfiltered node set — timeline histogram bins this
   focusRoots: new Set(),           // org-roam local graph: union of roots' 1-hop rings
-  timeline: { cutoff: null, playing: false, colorMode: 'off', recencyLo: null, recencyHi: null }, // bottom strip time cutoff + node-color override
+  timeline: { cutoff: null, dir: 'before', playing: false, colorMode: 'off', recencyLo: null, recencyHi: null }, // time cutoff (before/after) + node-color override
   orphansOnly: false,              // header chip: keep only degree-0 nodes
   selected: null,
   hl: null,                        // { id, nbs:Set } — persistent highlight (selection)
@@ -181,7 +181,8 @@ function viewData() {
   // time cutoff (created_at <= T) and orphans-only (global degree 0).
   const cutoff = state.timeline.cutoff;
   if (cutoff != null) {
-    nodes = nodes.filter((n) => { const t = Date.parse(n.created_at); return !Number.isFinite(t) || t <= cutoff; });
+    const after = state.timeline.dir === 'after';
+    nodes = nodes.filter((n) => { const t = Date.parse(n.created_at); if (!Number.isFinite(t)) return true; return after ? t >= cutoff : t <= cutoff; });
     // links between surviving nodes only, so orphan degree below reflects the current view
     const ids = new Set(nodes.map((n) => n.id));
     links = links.filter((l) => ids.has(l.source) && ids.has(l.target));
@@ -756,8 +757,9 @@ $('#focus-reset').onclick = clearFocus;
 /* ---------- timeline strip ---------- */
 
 let timelineMounted = false;
-function onCutoff(T) {
+function onCutoff(T, dir) {
   state.timeline.cutoff = T;
+  if (dir) state.timeline.dir = dir;
   if (graph) graph.graphData(viewData());
 }
 function showTimeline(on) {

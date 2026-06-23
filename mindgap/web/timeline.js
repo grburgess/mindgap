@@ -1,7 +1,8 @@
 /* mindgap — timeline strip: histogram of node created_at + draggable playhead +
-   ▶ play that animates a time cutoff, with adjustable bin resolution (day/week/month).
-   Pure binning (bins) is testable in isolation; render/scrub/play own the DOM. No deps.
-   Colors come from CSS theme tokens. */
+   ▶ play, adjustable resolution (day/week/month), and a before/after toggle. The kept
+   side of the playhead stays lit; the other side is scrimmed; a date lozenge rides the
+   playhead (Time Machine style). Pure binning (bins) is testable; render/scrub/play own
+   the DOM. No deps. Colors come from CSS theme tokens. */
 'use strict';
 (function () {
   const DAY = 86400000, WEEK = 7 * DAY;
@@ -9,7 +10,6 @@
   const parse = (n) => { const t = Date.parse(n && n.created_at); return Number.isFinite(t) ? t : null; };
   const fmt = (t) => new Date(t).toISOString().slice(0, 10);
 
-  // bucket-start key for a timestamp at the given resolution (all UTC)
   function keyOf(t, gran) {
     const d = new Date(t);
     if (gran === 'month') return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
@@ -17,7 +17,6 @@
     if (gran === 'week') { const dow = (d.getUTCDay() + 6) % 7; return day - dow * DAY; }  // Monday start
     return day;
   }
-  // start of the bucket AFTER key (for gap-fill + last-bucket end)
   function nextKey(k, gran) {
     if (gran === 'week') return k + WEEK;
     if (gran === 'month') { const d = new Date(k); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); }
@@ -35,43 +34,46 @@
     return out;
   }
 
-  // module state for the single mounted strip
-  let root, barsEl, headEl, readoutEl, playBtn, resBtn, fromEl, toEl;
+  let barsEl, barwrapEl, scrimEl, headEl, dateEl, readoutEl, playBtn, resBtn, dirBtn, fromEl, toEl;
   let onCutoffCb = null, B = [], N = [], minT = null, maxT = null, total = 0;
-  let cutoff = null, playing = false, raf = 0, dragging = false, gran = 'day';
+  let cutoff = null, playing = false, raf = 0, dragging = false, gran = 'day', dir = 'before';
 
-  function span() { return Math.max((maxT || 0) - (minT || 0), 1); }
-  function frac(t) { return Math.min(Math.max((t - minT) / span(), 0), 1); }
-  function tAt(f) { return minT + f * span(); }
+  function spanMs() { return Math.max((maxT || 0) - (minT || 0), 1); }
+  function frac(t) { return Math.min(Math.max((t - minT) / spanMs(), 0), 1); }
+  function tAt(f) { return minT + f * spanMs(); }
 
-  function emit(T) { cutoff = T; if (onCutoffCb) onCutoffCb(T); paintHead(); }
+  function emit(T) { cutoff = T; if (onCutoffCb) onCutoffCb(T, dir); paintHead(); }
 
   function visibleCount(T) {
     if (T == null) return total;
-    let c = 0;
-    // exact-timestamp count to match the graph's viewData filter (t <= cutoff); a
-    // bucket-granular sum would overcount nodes created later in the playhead's current bucket
-    for (const n of N) { const t = parse(n); if (t != null && t <= T) c++; }
+    let c = 0; const after = dir === 'after';
+    // exact-timestamp count to match the graph's viewData filter
+    for (const n of N) { const t = parse(n); if (t == null) continue; if (after ? t >= T : t <= T) c++; }
     return c;
   }
 
   function paintHead() {
     if (!headEl) return;
-    const f = cutoff == null ? 1 : frac(cutoff);
+    const f = cutoff == null ? (dir === 'after' ? 0 : 1) : frac(cutoff);
     headEl.style.left = (f * 100) + '%';
-    const T = cutoff == null ? maxT : cutoff;
-    const vis = cutoff == null ? total : visibleCount(cutoff);
-    readoutEl.textContent = (T != null ? fmt(T) : '—') + ' · ' + vis + '/' + total + ' nodes';
+    if (dir === 'after') { scrimEl.style.left = '0'; scrimEl.style.width = (f * 100) + '%'; }
+    else { scrimEl.style.left = (f * 100) + '%'; scrimEl.style.width = ((1 - f) * 100) + '%'; }
+    const T = cutoff == null ? (dir === 'after' ? minT : maxT) : cutoff;
+    dateEl.textContent = T != null ? fmt(T) : '—';
+    readoutEl.textContent = visibleCount(cutoff) + ' / ' + total + ' nodes';
   }
 
   function renderBars() {
-    if (!barsEl) return;
-    const max = B.reduce((m, b) => Math.max(m, b.count), 1);
-    barsEl.innerHTML = B.map((b) =>
-      `<span class="tl-bar" style="height:${Math.max(8, Math.round(b.count / max * 100))}%" title="${fmt(b.day)}: ${b.count}"></span>`).join('');
-    if (headEl) barsEl.appendChild(headEl);   // head lives inside .tl-bars; re-attach after rebuild
+    if (!barwrapEl) return;
+    const max = B.reduce((m, b) => Math.max(m, b.count), 1), tot = spanMs();
+    barwrapEl.innerHTML = B.map((b) => {
+      const w = (nextKey(b.day, gran) - b.day) / tot * 100;
+      const h = Math.max(7, Math.round(b.count / max * 100));
+      return `<span class="tl-bar" style="width:${w}%;height:${h}%" title="${fmt(b.day)}: ${b.count}"></span>`;
+    }).join('');
     fromEl.textContent = minT != null ? fmt(minT) : '';
     toEl.textContent = maxT != null ? fmt(maxT) : '';
+    paintHead();
   }
 
   function recompute(nodes) {
@@ -79,16 +81,13 @@
     B = bins(N, gran);
     total = N.filter((n) => parse(n) != null).length;
     minT = B.length ? B[0].day : null;
-    maxT = B.length ? nextKey(B[B.length - 1].day, gran) - 1 : null;  // include the whole last bucket
+    maxT = B.length ? nextKey(B[B.length - 1].day, gran) - 1 : null;
   }
 
-  function setGran(g) {
-    gran = g; if (resBtn) resBtn.textContent = g;
-    recompute(N); renderBars(); paintHead();   // cutoff (a timestamp) stays valid across resolutions
-  }
+  function setGran(g) { gran = g; if (resBtn) resBtn.textContent = g; recompute(N); renderBars(); }
+  function setDir(d) { dir = d; if (dirBtn) { dirBtn.textContent = d; dirBtn.dataset.dir = d; } emit(cutoff); }
 
   function stop() { playing = false; if (raf) cancelAnimationFrame(raf), raf = 0; if (playBtn) playBtn.textContent = '▶'; }
-
   function play() {
     if (!B.length) return;
     playing = true; playBtn.textContent = '⏸';
@@ -96,22 +95,18 @@
     const step = (now) => {
       if (!playing) return;
       const p = Math.min((now - t0) / DUR, 1);
-      if (p >= 1) { stop(); emit(null); return; }   // reached max -> show all
+      if (p >= 1) { stop(); emit(null); return; }
       emit(from + p * (to - from));
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
   }
 
-  // drag the playhead (pointer over the track) -> cutoff; pauses play
-  function trackFrac(clientX) {
-    const r = barsEl.getBoundingClientRect();
-    return Math.min(Math.max((clientX - r.left) / Math.max(r.width, 1), 0), 1);
-  }
+  function trackFrac(clientX) { const r = barsEl.getBoundingClientRect(); return Math.min(Math.max((clientX - r.left) / Math.max(r.width, 1), 0), 1); }
   function onDown(e) {
     if (!B.length) return;
     stop(); dragging = true;
-    try { barsEl.setPointerCapture(e.pointerId); } catch { /* no active pointer (e.g. synthetic/cancelled) */ }
+    try { barsEl.setPointerCapture(e.pointerId); } catch { /* no active pointer */ }
     emit(tAt(trackFrac(e.clientX)));
   }
   function onMove(e) { if (dragging) emit(tAt(trackFrac(e.clientX))); }
@@ -121,40 +116,43 @@
     onCutoffCb = onCutoff || null;
     el.innerHTML = `
       <div class="tl-controls">
-        <button class="tl-play" title="play (cutoff min→max)">▶</button>
-        <button class="tl-res mono" title="bin resolution (day / week / month)">day</button>
+        <button class="tl-play" title="play the cutoff across time">▶</button>
+        <button class="tl-res mono" title="resolution: day / week / month">day</button>
+        <button class="tl-dir mono" data-dir="before" title="show nodes created before vs after the playhead">before</button>
         <span class="tl-readout mono"></span>
       </div>
       <div class="tl-track">
         <span class="tl-label tl-from mono dim"></span>
-        <div class="tl-bars"><div class="tl-head"></div></div>
+        <div class="tl-bars">
+          <div class="tl-barwrap"></div>
+          <div class="tl-scrim"></div>
+          <div class="tl-head"><span class="tl-date mono"></span></div>
+        </div>
         <span class="tl-label tl-to mono dim"></span>
       </div>`;
-    root = el;
     barsEl = el.querySelector('.tl-bars');
+    barwrapEl = el.querySelector('.tl-barwrap');
+    scrimEl = el.querySelector('.tl-scrim');
     headEl = el.querySelector('.tl-head');
+    dateEl = el.querySelector('.tl-date');
     readoutEl = el.querySelector('.tl-readout');
     playBtn = el.querySelector('.tl-play');
     resBtn = el.querySelector('.tl-res');
+    dirBtn = el.querySelector('.tl-dir');
     fromEl = el.querySelector('.tl-from');
     toEl = el.querySelector('.tl-to');
     playBtn.onclick = () => { playing ? stop() : play(); };
     resBtn.onclick = () => { stop(); setGran(GRANS[(GRANS.indexOf(gran) + 1) % GRANS.length]); };
+    dirBtn.onclick = () => setDir(dir === 'before' ? 'after' : 'before');
     barsEl.addEventListener('pointerdown', onDown);
     barsEl.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     recompute(nodes);
     cutoff = null;
     renderBars();
-    paintHead();
   }
 
-  // refresh bins from a (possibly new) full node set; keep the strip stable
-  function update(nodes) {
-    recompute(nodes);
-    renderBars();
-    paintHead();
-  }
+  function update(nodes) { recompute(nodes); renderBars(); }
 
   window.Timeline = { mount, update, bins };
 })();
