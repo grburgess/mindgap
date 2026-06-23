@@ -103,6 +103,18 @@ class CliTest(unittest.TestCase):
         out = self.run_cli("stats")
         json.loads(out)  # valid JSON
 
+    def test_lint_json_reports_orphan(self):
+        self.run_cli("add", "--title", "Lonely Node")
+        out = self.run_cli("lint", "--json")
+        rep = json.loads(out)
+        self.assertIn("orphans", rep)
+        self.assertIn("lonely-node", {o["id"] for o in rep["orphans"]})
+
+    def test_lint_text_runs(self):
+        self.run_cli("add", "--title", "Lonely Node")
+        out = self.run_cli("lint")
+        self.assertIn("orphans:", out)
+
 
 if __name__ == "__main__":
     unittest.main()

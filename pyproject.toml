@@ -15,9 +15,10 @@ dependencies = []
 [project.scripts]
 mindgap = "mindgap.cli:main"
 mindgap-mcp = "mindgap.mcp:main"
+mindgap-capture-hook = "mindgap.capture_hook:main"
 
 [tool.setuptools.packages.find]
 include = ["mindgap*"]
 
 [tool.setuptools.package-data]
-mindgap = ["web/*", "seed.json", "loops/**/*"]
+mindgap = ["web/*", "seed.json", "loops/**/*", "capture.json"]

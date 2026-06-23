@@ -1,0 +1,6 @@
+#!/bin/sh
+# SessionEnd hook: dispatch the mindgap knowledge-capture subagent. Never blocks exit.
+SELF=$0
+while [ -L "$SELF" ]; do SELF=$(readlink "$SELF"); done
+REPO=$(CDPATH= cd -- "$(dirname -- "$SELF")/.." && pwd)
+PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m mindgap.capture_hook "$@"

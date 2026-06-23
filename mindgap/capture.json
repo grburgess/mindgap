@@ -1,0 +1,12 @@
+{
+  "enabled": false,
+  "domain": {
+    "description": "",
+    "keywords": []
+  },
+  "denylist_dirs": ["~/.ssh", "~/.config", "~/secrets"],
+  "allowlist_dirs": [],
+  "min_transcript_bytes": 2000,
+  "capture": {"model": "claude-haiku-4-5", "timeout_s": 180, "max_nodes_per_session": 15, "default_confidence": 0.6},
+  "lint": {"stale_days": 60, "stale_below_confidence": 0.7}
+}

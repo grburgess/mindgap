@@ -168,6 +168,30 @@ def cmd_stats(args):
     print(json.dumps(db.stats(conn), indent=2))
 
 
+def cmd_lint(args):
+    from . import lint, capture
+    conn = db.connect()
+    cfg = capture.load_config().get("lint", {})
+    rep = lint.report(conn,
+                      stale_days=cfg.get("stale_days", 60),
+                      below_confidence=cfg.get("stale_below_confidence", 0.7))
+    if args.json:
+        print(json.dumps(rep, indent=2))
+        return
+    print(f"orphans: {len(rep['orphans'])}")
+    for r in rep["orphans"]:
+        print(f"  {r['id']} [{r['type']}] {r['title']}")
+    print(f"dangling stubs: {len(rep['dangling_stubs'])}")
+    for r in rep["dangling_stubs"]:
+        print(f"  {r['id']} {r['title']}")
+    print(f"near-duplicate candidates: {len(rep['duplicate_candidates'])}")
+    for r in rep["duplicate_candidates"]:
+        print(f"  {r['a']} ~ {r['b']} ({r['ratio']})")
+    print(f"stale capture nodes: {len(rep['stale_capture'])}")
+    for r in rep["stale_capture"]:
+        print(f"  {r['id']} (conf {r['confidence']}) {r['title']}")
+
+
 def cmd_serve(args):
     from .server import run
     run(args.port, not args.no_open)
@@ -188,8 +212,23 @@ def init_db(force=False) -> int:
     return conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
 
 
+def install_capture_preset() -> bool:
+    """Copy the packaged capture.json preset to the user capture config if absent."""
+    from . import capture
+    dst = capture.config_path()
+    if dst.exists():
+        return False
+    src = capture.preset_path()
+    if not src.exists():
+        return False
+    dst.write_text(src.read_text())
+    return True
+
+
 def cmd_init(args):
     n = init_db(force=args.force)
+    if install_capture_preset():
+        print(f"installed capture preset -> {__import__('mindgap.capture', fromlist=['x']).config_path()}")
     print(f"seeded {config.db_path()} ({n} nodes)" if n
           else f"db at {config.db_path()} already initialized")
 
@@ -316,6 +355,10 @@ def main(argv=None):
 
     p = sub.add_parser("stats", help="counts")
     p.set_defaults(func=cmd_stats)
+
+    p = sub.add_parser("lint", help="graph health report (orphans/stubs/dups/stale)")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_lint)
 
     p = sub.add_parser("serve", help="web UI")
     p.add_argument("--port", type=int, default=8765)

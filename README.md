@@ -43,8 +43,11 @@ Pick one. All paths put `mindgap` (and `mindgap-mcp`) on your PATH and store dat
     /plugin marketplace add grburgess/mindgap
     /plugin install mindgap
 Registers the `mindgap` MCP server and the `paper-to-mindmap`, `arxiv-explainer`, `papers-library`, and `loop-system` skills.
-(After a pip/pipx install, register the MCP directly with `claude mcp add mindgap mindgap-mcp`;
-for a source checkout the repo's `.mcp.json` already points Claude Code at `./bin/mindgap-mcp`.)
+Register the MCP at **user scope** so every Claude Code session, in any directory, can reach the graph:
+
+    claude mcp add -s user mindgap mindgap-mcp   # global; needs mindgap-mcp on PATH
+
+`-s user` is what makes it global (the default scope is local/current-dir only). The launcher self-locates and the DB lives in `~/.mindgap`, so it runs from anywhere. A source checkout also ships a project-scoped `.mcp.json` → `./bin/mindgap-mcp`, active only inside this repo.
 
 ### Where data lives
 `~/.mindgap/` — `mindgap.db` and `snapshots/`. `MINDGAP_HOME` relocates the whole dir;
@@ -64,6 +67,7 @@ mindgap rm ID
 mindgap unlink SRC DST [--rel REL]
 mindgap export [--out FILE]                 # JSON snapshot -> ~/.mindgap/snapshots/
 mindgap stats
+mindgap lint [--json]                       # graph health: orphans/stubs/dups/stale
 mindgap serve [--port 8765] [--no-open]
 ```
 
@@ -106,13 +110,29 @@ The UI is vanilla JS with no build step, drawing `force-graph`/`3d-force-graph`,
 
 ## MCP server
 
-For agents, `mindgap/mcp.py` exposes the graph as an [MCP](https://modelcontextprotocol.io) server over stdio — stdlib-only (newline-delimited JSON-RPC 2.0, no pip deps). Source checkouts: registered in [`.mcp.json`](.mcp.json) as `./bin/mindgap-mcp`. pip/pipx installs: `claude mcp add mindgap mindgap-mcp`.
+For agents, `mindgap/mcp.py` exposes the graph as an [MCP](https://modelcontextprotocol.io) server over stdio — stdlib-only (newline-delimited JSON-RPC 2.0, no pip deps). For **all sessions everywhere**, register it globally at user scope: `claude mcp add -s user mindgap mindgap-mcp` (needs `mindgap-mcp` on PATH; the launcher self-locates and the DB lives in `~/.mindgap`, so it works from any directory). A source checkout also ships a project-scoped [`.mcp.json`](.mcp.json) → `./bin/mindgap-mcp`, active only inside the repo.
 
 Ten tools wrap the same `db` layer as the CLI: `mindgap_ingest` (batch write), `mindgap_add_node`, `mindgap_link`, `mindgap_unlink`, `mindgap_get_node`, `mindgap_find`, `mindgap_context`, `mindgap_stats`, `mindgap_export`, `mindgap_remove_node`. Unlike the raw CLI, the write tools validate at the call boundary — `mindgap_ingest` rejects the whole payload (no partial commit) if any edge endpoint isn't in the DB or the payload, `mindgap_link` refuses to auto-stub a missing endpoint, `created_by` is required, and writes return the persisted rows so a caller can't claim a write that didn't land.
 
 ## Agent loops
 
 The graph is designed to be fed by recurring autonomous sessions that scan Confluence, GitHub, and arXiv. The protocol — read context first, ingest JSON with provenance (`created_by`, source URLs), wiki-link into the existing graph, export at session end — is defined in [AGENTS.md](AGENTS.md). Sessions can drive the graph via the CLI or the MCP tools above (the MCP's validation makes it the safer path for unattended writes).
+
+## Self-learning capture
+
+> **Disabled by default.** mindgap ships the capture engine off, with an empty domain. Nothing fires until you opt in.
+
+Optionally, mindgap can learn from every Claude Code session: a `SessionEnd` hook runs a cheap deterministic pre-gate (no LLM) and, only when a session looks on-domain, fire-and-forgets a detached headless subagent that distills durable learnings and ingests them — following the `knowledge-capture` skill and [AGENTS.md](AGENTS.md). Captured nodes carry `created_by="capture:<repo>"`, `confidence=0.6`, and a `urls` entry pointing at the transcript, so they sit below hand-curated nodes and are trivially reversible.
+
+To enable it:
+
+1. `mindgap init` once — copies the packaged preset to `~/.mindgap/capture.json`.
+2. Edit `~/.mindgap/capture.json`: set `"enabled": true` and fill in `domain` (a `description` and `keywords` that define what counts as on-topic). Tune `denylist_dirs`/`allowlist_dirs`, `min_transcript_bytes`, and the `capture`/`lint` blocks as needed. (`MINDGAP_CAPTURE_ENABLED` env-overrides the flag.)
+3. Register the hook globally in `~/.claude/settings.json` under `SessionEnd`, pointing at `mindgap-capture-hook` (on PATH after install, or `./bin/mindgap-capture-hook` from a source checkout).
+
+The pre-gate skips off-domain dirs, denylisted dirs, capture's own self-spawned sessions (`MINDGAP_CAPTURE=1`), too-small transcripts, and transcripts with no domain keywords — so the LLM subagent only ever runs on genuinely on-topic sessions. A best-effort lock (`~/.mindgap/capture.lock`) single-flights it. The hook never blocks session exit.
+
+`mindgap lint` is the companion: a deterministic health report (orphans, dangling stubs, near-duplicate candidates, stale capture nodes) that never rewrites the graph.
 
 ## Knowledge loops (arXiv search → graph)
 
