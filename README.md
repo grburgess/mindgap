@@ -2,12 +2,9 @@
 
 **Give an agent a goal and a place to remember.** It loops — reading what's known, researching, writing back evidence-linked findings — and a knowledge graph grows itself across sessions. `mindgap` is that memory: a local, org-roam-style graph for research and project knowledge (concepts, definitions, software, repos, Confluence pages, arXiv papers, people, teams) that autonomous loop sessions read *before* they work and write *after* — markdown nodes densified with `[[wiki-links]]`, every node carrying its source URLs, rendered live in 2D/3D. You can hand-curate via CLI + web UI too; the agents just never stop adding.
 
-<p align="center"><img src="assets/demo.gif" alt="mindgap web UI — the knowledge graph as a 3D star-field galaxy, topic clusters glowing as nebula orbs" width="900"></p>
+<p align="center"><a href="https://github.com/grburgess/mindgap/blob/main/brag-output-2026-06-24-133017/brag.mp4"><img src="assets/demo.gif" alt="mindgap web UI — the knowledge graph as a 3D star-field galaxy, topic clusters glowing as nebula orbs" width="900"></a></p>
 
-<p align="center">
-  <video src="https://github.com/grburgess/mindgap/raw/f240ebf4d5a66792c873a2ff7601012c6e51c50e/brag-output-2026-06-24-133017/brag.mp4" poster="https://github.com/grburgess/mindgap/raw/f240ebf4d5a66792c873a2ff7601012c6e51c50e/assets/demo.gif" width="900" muted controls playsinline></video>
-  <br><sub>▶ the 20-second launch film — scattered notes bloom into a knowledge graph, then tilt into a star-field galaxy. (<a href="brag-output-2026-06-24-133017/brag.mp4"><code>brag.mp4</code></a>)</sub>
-</p>
+<p align="center"><sub>▶ <a href="https://github.com/grburgess/mindgap/blob/main/brag-output-2026-06-24-133017/brag.mp4">Watch the 20-second launch film</a> — scattered notes bloom into a knowledge graph, then tilt into a star-field galaxy.</sub></p>
 
 ## The idea
 
