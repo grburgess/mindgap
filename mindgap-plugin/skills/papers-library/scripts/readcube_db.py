@@ -93,3 +93,115 @@ def topic_node(lst, tid):
     return {"id": tid, "title": safe(lst.get("name") or tid), "type": "concept",
             "body": safe(f"Topic from the Papers library ({n} papers)."),
             "tags": ["papers-library", "topic"], "confidence": 0.9, "created_by": CREATED_BY}
+
+
+def build_payload(items, lists, limit=0):
+    items = [i for i in items if not i.get("deleted")]
+    lists = [l for l in lists if not l.get("deleted")]
+    by_iid = {i["id"]: i for i in items}
+    by_lid = {l["id"]: l for l in lists}
+    tid = assign_topic_ids(lists)
+
+    authored = {iid for iid, it in by_iid.items() if any(AUTHOR_SURNAME in a for a in _authors(it))}
+    listed = set()
+    for l in lists:
+        listed |= {x for x in (l.get("item_ids") or []) if x in by_iid}
+    core = listed | authored
+    if limit:
+        core = set(sorted(core)[:limit])
+
+    has_child = {l.get("parent_id") for l in lists if l.get("parent_id") in by_lid}
+    core_count = {}
+    for l in lists:
+        core_count[l["id"]] = sum(1 for x in (l.get("item_ids") or []) if x in core)
+    kept_lid = {l["id"] for l in lists
+                if core_count[l["id"]] > 0 or l.get("parent_id") in by_lid or l["id"] in has_child}
+
+    nodes, edges = [], []
+    nodes.append({"id": HUB_ID, "title": HUB_TITLE, "type": "person",
+                  "body": "Author/maintainer hub for the imported papers and repos.",
+                  "tags": ["papers-library"], "confidence": 1.0, "created_by": CREATED_BY})
+    for l in lists:
+        if l["id"] in kept_lid:
+            nodes.append(topic_node(l, tid[l["id"]]))
+    pid = {}
+    seen_pid = set()
+    for iid in sorted(core):
+        n = paper_node(by_iid[iid])
+        pid[iid] = n["id"]
+        if n["id"] not in seen_pid:        # same-arxiv dups collapse to one node
+            nodes.append(n)
+            seen_pid.add(n["id"])
+
+    for l in lists:                        # hierarchy
+        if l["id"] in kept_lid and l.get("parent_id") in by_lid and l["parent_id"] in kept_lid:
+            edges.append({"src": tid[l["id"]], "dst": tid[l["parent_id"]], "rel": "part_of",
+                          "created_by": CREATED_BY})
+    membership = 0
+    for l in lists:                        # paper → topic
+        if l["id"] not in kept_lid:
+            continue
+        for x in (l.get("item_ids") or []):
+            if x in core:
+                edges.append({"src": pid[x], "dst": tid[l["id"]], "rel": "part_of", "created_by": CREATED_BY})
+                membership += 1
+    for iid in sorted(authored & core):    # authored → hub
+        edges.append({"src": pid[iid], "dst": HUB_ID, "rel": "relates_to", "created_by": CREATED_BY})
+
+    # dedupe edges by (src,dst,rel)
+    uniq, key = [], set()
+    for e in edges:
+        k = (e["src"], e["dst"], e["rel"])
+        if k not in key:
+            key.add(k); uniq.append(e)
+    report = {"papers": len(seen_pid), "topics": len(kept_lid),
+              "dropped_topics": len(lists) - len(kept_lid),
+              "authored": len(authored & core), "membership_edges": membership}
+    return {"nodes": nodes, "edges": uniq, "created_by": CREATED_BY, "_report": report}
+
+
+def open_ro(path):
+    return sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
+
+
+def resolve_db(path):
+    if os.path.isfile(path):
+        return path
+    cands = [f for f in os.listdir(path) if f.endswith(".db") and f not in ("shared.db", "Databases.db")]
+    if not cands:
+        raise SystemExit(f"no library .db found in {path}")
+    return os.path.join(path, max(cands, key=lambda f: os.path.getsize(os.path.join(path, f))))
+
+
+def load(conn):
+    items = [json.loads(r[0]) for r in conn.execute("SELECT json FROM items")]
+    lists = [json.loads(r[0]) for r in conn.execute("SELECT json FROM lists")]
+    return items, lists
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--db", default=DEFAULT_STORE)
+    ap.add_argument("--out")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--limit", type=int, default=0)
+    args = ap.parse_args(argv)
+    conn = open_ro(resolve_db(args.db))
+    items, lists = load(conn)
+    payload = build_payload(items, lists, limit=args.limit)
+    rep = payload.pop("_report")
+    if args.dry_run:
+        print(json.dumps(rep, indent=2), file=sys.stderr)
+        print(f"nodes={len(payload['nodes'])} edges={len(payload['edges'])}", file=sys.stderr)
+        for n in payload["nodes"][:3] + [x for x in payload["nodes"] if x["type"] == "paper"][:2]:
+            print("  -", n["type"], n["id"], "|", n["title"][:60], file=sys.stderr)
+        return
+    out = open(args.out, "w") if args.out else sys.stdout
+    json.dump(payload, out, indent=1)
+    if args.out:
+        out.close()
+        print(f"wrote {args.out}: {rep}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

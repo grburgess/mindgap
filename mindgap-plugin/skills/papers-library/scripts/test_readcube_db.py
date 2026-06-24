@@ -55,5 +55,71 @@ class TestNodes(unittest.TestCase):
         self.assertEqual((n["id"], n["type"]), ("topic-gamma-ray-burst", "concept"))
         self.assertIn("topic", n["tags"])
 
+def json_dumps(d):
+    import json
+    return json.dumps(d)
+
+
+class TestPayload(unittest.TestCase):
+    def _data(self):
+        items = [ITEM_ARXIV, ITEM_DOI, ITEM_BARE,
+                 {"id": "DUP", "article": {"title": "dup", "authors": ["A"]},
+                  "ext_ids": {"arxiv": "2107.12404"}, "user_data": {}}]  # same arxiv as ITEM_ARXIV
+        lists = [
+            {"id": "T_GRB", "name": "Gamma-ray Burst", "parent_id": "T_ASTRO",
+             "item_ids": [ITEM_ARXIV["id"], ITEM_DOI["id"]]},
+            {"id": "T_ASTRO", "name": "astrophysics", "parent_id": None, "item_ids": []},
+            {"id": "T_JUNK", "name": "auto_import", "parent_id": None, "item_ids": []},  # island → dropped
+        ]
+        return items, lists
+
+    def test_core_and_dedup(self):
+        items, lists = self._data()
+        p = R.build_payload(items, lists)
+        ids = {n["id"] for n in p["nodes"] if n["type"] == "paper"}
+        # ITEM_ARXIV+DUP share arxiv id → 1 node; ITEM_DOI listed; ITEM_BARE only authored? no → excluded
+        self.assertEqual(ids, {"arxiv-2107-12404", "doi-10-1086-588136"})
+        self.assertNotIn("rc-cccc3333", ids)          # unlisted, non-authored → excluded
+
+    def test_authored_included_even_if_unlisted(self):
+        items, lists = self._data()
+        p = R.build_payload(items, lists)
+        # ITEM_ARXIV authored (Burgess) & listed; edge to hub present
+        self.assertTrue(any(e["dst"] == "grburgess" and e["rel"] == "relates_to" for e in p["edges"]))
+        self.assertTrue(any(n["id"] == "grburgess" and n["type"] == "person" for n in p["nodes"]))
+
+    def test_topic_hierarchy_and_drop(self):
+        items, lists = self._data()
+        p = R.build_payload(items, lists)
+        topic_ids = {n["id"] for n in p["nodes"] if n["type"] == "concept"}
+        self.assertIn("topic-gamma-ray-burst", topic_ids)
+        self.assertIn("topic-astrophysics", topic_ids)        # kept: has child
+        self.assertNotIn("topic-auto-import", topic_ids)      # dropped: island
+        self.assertTrue(any(e["rel"] == "part_of" and e["dst"] == "topic-astrophysics" for e in p["edges"]))
+
+    def test_no_dangling_endpoints(self):
+        items, lists = self._data()
+        p = R.build_payload(items, lists)
+        node_ids = {n["id"] for n in p["nodes"]}
+        for e in p["edges"]:
+            self.assertIn(e["src"], node_ids)
+            self.assertIn(e["dst"], node_ids)
+
+    def test_roundtrip_through_sqlite(self):
+        import sqlite3, tempfile, os
+        items, lists = self._data()
+        fd, path = tempfile.mkstemp(suffix=".db"); os.close(fd)
+        c = sqlite3.connect(path)
+        c.execute("CREATE TABLE items(id TEXT, json TEXT)")
+        c.execute("CREATE TABLE lists(id TEXT, json TEXT)")
+        c.executemany("INSERT INTO items VALUES(?,?)", [(i["id"], json_dumps(i)) for i in items])
+        c.executemany("INSERT INTO lists VALUES(?,?)", [(l["id"], json_dumps(l)) for l in lists])
+        c.commit(); c.close()
+        conn = R.open_ro(path)
+        gi, gl = R.load(conn)
+        self.assertEqual(len(gi), len(items))
+        os.remove(path)
+
+
 if __name__ == "__main__":
     unittest.main()
