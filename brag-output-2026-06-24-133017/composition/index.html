@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 500;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url('assets/fonts/BricolageGrotesque-500.woff2') format('woff2');
+}
+      @font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url('assets/fonts/BricolageGrotesque-700.woff2') format('woff2');
+}
+      @font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('assets/fonts/HankenGrotesk-400.woff2') format('woff2');
+}
+      @font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('assets/fonts/HankenGrotesk-500.woff2') format('woff2');
+}
+      @font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('assets/fonts/HankenGrotesk-600.woff2') format('woff2');
+}
+      @font-face {
+  font-family: 'Spline Sans Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('assets/fonts/SplineSansMono-400.woff2') format('woff2');
+}
+      @font-face {
+  font-family: 'Spline Sans Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('assets/fonts/SplineSansMono-500.woff2') format('woff2');
+}
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 1920px; height: 1080px; overflow: hidden;
+        background: #0b1210;
+        font-family: "Hanken Grotesk", sans-serif;
+        color: #d7e0dc;
+      }
+      #root { position: relative; width: 1920px; height: 1080px; }
+
+      /* ---- background ---- */
+      #bg { position: absolute; inset: 0; background: #0b1210; }
+      /* world-space star field (3D outro) — drawn every frame by render(), behind the constellation */
+      #stars { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+      #bg-grain {
+        position: absolute; inset: 0; opacity: 0.5;
+        background:
+          radial-gradient(1200px 900px at 50% 46%, rgba(87,199,164,0.05), rgba(11,18,16,0) 70%),
+          radial-gradient(900px 700px at 72% 30%, rgba(167,139,250,0.045), rgba(11,18,16,0) 70%);
+      }
+      #vignette {
+        position: absolute; inset: 0;
+        background: radial-gradient(120% 120% at 50% 50%, rgba(11,18,16,0) 55%, rgba(5,9,8,0.55) 100%);
+      }
+      /* audio-reactive core glow — opacity written every frame by render() */
+      #core-glow {
+        position: absolute; left: 50%; top: 46%;
+        width: 1500px; height: 1120px; transform: translate(-50%, -50%);
+        background: radial-gradient(closest-side, rgba(87,199,164,0.16), rgba(87,199,164,0) 72%);
+        opacity: 0;
+      }
+
+      /* ---- stage / constellation ---- */
+      #stage-wrap { position: absolute; inset: 0; perspective: 1700px; }
+      #stage { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
+      #svg { position: absolute; inset: 0; }
+      .edge { stroke: #57c7a4; stroke-width: 1.6; opacity: 0; }
+      .hull { opacity: 0; }
+      .node-core { stroke: rgba(11,18,16,0.85); stroke-width: 2; }
+
+      /* cluster centroid labels */
+      .clabel {
+        position: absolute; transform: translate(-50%, -50%);
+        font-family: "Spline Sans Mono", monospace; font-size: 21px; font-weight: 500;
+        letter-spacing: 0.01em; white-space: nowrap; opacity: 0;
+        text-shadow: 0 2px 14px rgba(5,9,8,0.9);
+      }
+
+      /* ---- produced chrome (echoes the running app) ---- */
+      #chrome-brand {
+        position: absolute; left: 60px; top: 44px; opacity: 0;
+        font-family: "Bricolage Grotesque", sans-serif; font-weight: 700;
+        font-size: 30px; letter-spacing: -0.02em;
+      }
+      #chrome-brand b { color: #57c7a4; font-weight: 700; }
+      #chrome-brand i { color: #a78bfa; font-style: normal; }
+      #chrome-url {
+        position: absolute; left: 60px; top: 84px; opacity: 0;
+        font-family: "Spline Sans Mono", monospace; font-size: 17px; color: #76847f;
+      }
+      #chrome-stat {
+        position: absolute; right: 64px; bottom: 46px; opacity: 0;
+        font-family: "Spline Sans Mono", monospace; font-size: 18px; color: #8fa39c;
+        letter-spacing: 0.02em;
+      }
+
+      /* ---- captions (container visible; children fade via GSAP fromTo immediateRender) ---- */
+      .cap { position: absolute; }
+      #cap-s1 {
+        inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; text-align: center; gap: 22px;
+      }
+      #cap-s1 .scrim {
+        position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        width: 1500px; height: 460px;
+        background: radial-gradient(closest-side, rgba(8,13,11,0.78), rgba(8,13,11,0) 75%);
+        z-index: -1;
+      }
+      #cap-s1 h1 {
+        font-family: "Bricolage Grotesque", sans-serif; font-weight: 700;
+        font-size: 90px; line-height: 1.04; letter-spacing: -0.02em; color: #eef3f1;
+        max-width: 1320px; text-shadow: 0 4px 26px rgba(5,9,8,0.85);
+      }
+      #cap-s1 .sub {
+        font-family: "Spline Sans Mono", monospace; font-size: 26px;
+        color: #9fb4ad; letter-spacing: 0.06em;
+      }
+
+      .cap-ll { left: 120px; bottom: 120px; max-width: 1100px; }
+      .cap-ll .line {
+        font-family: "Bricolage Grotesque", sans-serif; font-weight: 700;
+        font-size: 62px; line-height: 1.05; letter-spacing: -0.02em; color: #eef3f1;
+        text-shadow: 0 4px 24px rgba(5,9,8,0.85);
+      }
+      .cap-ll .note {
+        margin-top: 16px; font-family: "Spline Sans Mono", monospace;
+        font-size: 22px; color: #9fb4ad; letter-spacing: 0.04em;
+      }
+      .cap-ll .line b { color: #57c7a4; }
+      .cap-ll .line i { color: #a78bfa; font-style: normal; }
+
+      #cap-s4 {
+        left: 0; right: 0; bottom: 84px; text-align: center;
+      }
+      #cap-s4 .line {
+        font-family: "Bricolage Grotesque", sans-serif; font-weight: 700;
+        font-size: 50px; letter-spacing: -0.015em; color: #eef3f1;
+        text-shadow: 0 4px 24px rgba(5,9,8,0.9);
+      }
+
+      /* ---- ingest panel (scene 4) ---- */
+      #ingest {
+        position: absolute; left: 100px; top: 176px; width: 664px; opacity: 0;
+        background: rgba(14,23,20,0.86); border: 1px solid #1d2925; border-radius: 12px;
+        padding: 22px 26px 24px; box-shadow: 0 24px 60px rgba(0,0,0,0.45);
+        backdrop-filter: blur(3px);
+      }
+      #ingest .bar {
+        display: flex; gap: 8px; align-items: center; margin-bottom: 16px;
+        font-family: "Spline Sans Mono", monospace; font-size: 16px; color: #76847f;
+      }
+      #ingest .dot { width: 11px; height: 11px; border-radius: 50%; }
+      #ingest pre {
+        font-family: "Spline Sans Mono", monospace; font-size: 19px; line-height: 1.5;
+        color: #cdd7d2; white-space: pre;
+      }
+      #ingest .l { opacity: 0; display: block; }
+      #ingest .k { color: #57c7a4; }
+      #ingest .s { color: #d7e0dc; }
+      #ingest .w { color: #a78bfa; }
+      #ingest .ok { color: #9ae65a; }
+      #ingest .p { color: #76847f; }
+
+      /* ---- outro ---- */
+      #outro {
+        position: absolute; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 26px; opacity: 0;
+      }
+      #wordmark {
+        font-family: "Bricolage Grotesque", sans-serif; font-weight: 700;
+        font-size: 152px; letter-spacing: -0.03em; line-height: 1;
+      }
+      #wordmark b { color: #57c7a4; }
+      #wordmark i { color: #a78bfa; font-style: normal; }
+      #tagline {
+        font-family: "Hanken Grotesk", sans-serif; font-weight: 500;
+        font-size: 44px; color: #d7e0dc; opacity: 0;
+      }
+      #subline {
+        font-family: "Spline Sans Mono", monospace; font-size: 27px;
+        color: #9fb4ad; letter-spacing: 0.04em; opacity: 0;
+      }
+      #subline b { color: #57c7a4; }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <!-- background (track 0) -->
+      <div id="bg" class="clip" data-start="0" data-duration="20" data-track-index="0" style="z-index:0">
+        <canvas id="stars" width="1920" height="1080"></canvas>
+        <div id="bg-grain"></div>
+        <div id="core-glow"></div>
+        <div id="vignette"></div>
+      </div>
+
+      <!-- constellation stage (track 1) — full-frame decorative layer; overlay text sits on top by design -->
+      <div id="stage-wrap" class="clip" data-start="0" data-duration="20" data-track-index="1" style="z-index:1" data-layout-allow-overlap data-layout-ignore>
+        <div id="stage">
+          <svg id="svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet">
+            <g id="hulls"></g>
+            <g id="edges"></g>
+            <g id="nodes"></g>
+          </svg>
+          <div id="clabels"></div>
+        </div>
+      </div>
+
+      <!-- produced chrome (track 2) — intentional corner overlay -->
+      <div id="chrome" class="clip" data-start="3" data-duration="17" data-track-index="2" style="z-index:2" data-layout-allow-overlap>
+        <div id="chrome-brand"><b>mind</b><i>gap</i></div>
+        <div id="chrome-url">localhost:8765</div>
+        <div id="chrome-stat">16 nodes · 20 links · 3 topics</div>
+      </div>
+
+      <!-- caption: scene 1 (track 3) -->
+      <div id="cap-s1" class="cap clip" data-start="0" data-duration="3.9" data-track-index="3" style="z-index:5">
+        <div class="scrim"></div>
+        <h1>Your knowledge lives in scattered notes.</h1>
+        <div class="sub">concepts · papers · repos · people</div>
+      </div>
+
+      <!-- caption: scene 2 (track 4) -->
+      <div id="cap-s2" class="cap cap-ll clip" data-start="5.0" data-duration="4.6" data-track-index="4" style="z-index:5">
+        <div class="line"><b>mind</b><i>gap</i> connects them.</div>
+      </div>
+
+      <!-- caption: scene 3 (track 5) -->
+      <div id="cap-s3" class="cap cap-ll clip" data-start="9.4" data-duration="3.9" data-track-index="5" style="z-index:5">
+        <div class="line">Topics find themselves.</div>
+        <div class="note">Louvain communities · client-side · no deps</div>
+      </div>
+
+      <!-- ingest panel: scene 4 (track 6) -->
+      <div id="ingest" class="clip" data-start="12.7" data-duration="3.9" data-track-index="6" style="z-index:5">
+        <div class="bar">
+          <span class="dot" style="background:#57c7a4"></span>
+          <span class="dot" style="background:#a78bfa"></span>
+          <span>mindgap ingest -</span>
+        </div>
+        <pre><span class="l">{</span><span class="l">  <span class="k">"created_by"</span>: <span class="s">"loop:arxiv-weekly"</span>,</span><span class="l">  <span class="k">"nodes"</span>: [{ <span class="k">"id"</span>: <span class="s">"retrieval-augmentation"</span>,</span><span class="l">    <span class="k">"type"</span>: <span class="s">"paper"</span>,</span><span class="l">    <span class="k">"body"</span>: <span class="s">"uses <span class="w">[[embedding-pipelines]]</span>"</span> }],</span><span class="l">  <span class="k">"edges"</span>: [{ <span class="s">"retrieval-augmentation"</span></span><span class="l">    → <span class="s">"embedding-pipelines"</span> · <span class="k">"cites"</span> }]</span><span class="l">}</span><span class="l"><span class="ok">✓ ingested · 4 nodes · 3 edges</span></span></pre>
+      </div>
+
+      <!-- caption: scene 4 (track 7) -->
+      <div id="cap-s4" class="cap clip" data-start="13.0" data-duration="3.6" data-track-index="7" style="z-index:5">
+        <div class="line">Give an agent a goal. The graph grows itself.</div>
+      </div>
+
+      <!-- outro (track 8) -->
+      <div id="outro" class="clip" data-start="15.8" data-duration="4.2" data-track-index="8" style="z-index:8">
+        <div id="wordmark"><b>mind</b><i>gap</i></div>
+        <div id="tagline">A second brain that runs on nothing.</div>
+        <div id="subline"><b>stdlib Python</b> · SQLite · zero pip deps</div>
+      </div>
+
+      <!-- ===== audio ===== -->
+      <audio id="music" data-start="0" data-duration="20.2" data-track-index="10" data-volume="0.30"
+             src="assets/music/mindgap-bed.mp3"></audio>
+      <audio id="sfx-bloom" data-start="6.95" data-duration="1.2" data-track-index="11" data-volume="0.62"
+             src="assets/sfx/impact/impactSoft_medium_001.ogg"></audio>
+      <audio id="sfx-pop1" data-start="13.11" data-duration="0.8" data-track-index="12" data-volume="0.5"
+             src="assets/sfx/interface/drop_001.ogg"></audio>
+      <audio id="sfx-pop2" data-start="14.73" data-duration="0.8" data-track-index="13" data-volume="0.5"
+             src="assets/sfx/interface/drop_002.ogg"></audio>
+      <audio id="sfx-bong" data-start="17.47" data-duration="1.6" data-track-index="14" data-volume="0.6"
+             src="assets/sfx/interface/bong_001.ogg"></audio>
+    </div>
+
+    <script src="graph-data.js"></script>
+    <script src="audio-data.js"></script>
+
+    <script>
+      // ---------- build the constellation DOM (synchronous, deterministic) ----------
+      var G = window.GRAPH;
+      var SVGNS = "http://www.w3.org/2000/svg";
+      var LATE = { "retrieval-augmentation": 1, "a-researcher": 1, "louvain-clustering": 1, "metadata-page": 1 };
+
+      // per-node animation state (GSAP mutates these; render() is the only DOM writer)
+      var S = G.nodes.map(function (n) {
+        var late = !!LATE[n.id];
+        return {
+          bx: late ? n.x : n.sx, by: late ? n.y : n.sy, // base position
+          tx: n.x, ty: n.y, // settled target
+          alpha: late ? 0 : 0.5, // dim in S1
+          scale: late ? 0.0 : 0.7,
+          r: n.r, color: n.color, late: late,
+        };
+      });
+      // edge state: agent edge if it touches a late node
+      var E = G.edges.map(function (e) {
+        var agent = S[e.s].late || S[e.d].late;
+        return { s: e.s, d: e.d, alpha: 0, agent: agent };
+      });
+
+      var hullsG = document.getElementById("hulls");
+      var edgesG = document.getElementById("edges");
+      var nodesG = document.getElementById("nodes");
+      var clabels = document.getElementById("clabels");
+
+      // hulls (soft ellipses per community)
+      var hullEls = G.comms.map(function (c) {
+        var el = document.createElementNS(SVGNS, "ellipse");
+        var pad = 78;
+        el.setAttribute("cx", c.cx);
+        el.setAttribute("cy", c.cy);
+        el.setAttribute("rx", (c.maxx - c.minx) / 2 + pad);
+        el.setAttribute("ry", (c.maxy - c.miny) / 2 + pad);
+        el.setAttribute("fill", c.color);
+        el.setAttribute("fill-opacity", "0.08");
+        el.setAttribute("stroke", c.color);
+        el.setAttribute("stroke-opacity", "0.5");
+        el.setAttribute("stroke-width", "1.6");
+        el.setAttribute("class", "hull");
+        el.id = "hull-" + c.id;
+        hullsG.appendChild(el);
+
+        var lbl = document.createElement("div");
+        lbl.className = "clabel";
+        lbl.id = "clabel-" + c.id;
+        lbl.textContent = c.label;
+        lbl.style.color = c.color;
+        lbl.style.left = c.cx + "px";
+        lbl.style.top = (c.miny - 64) + "px";
+        clabels.appendChild(lbl);
+        return el;
+      });
+
+      // edges
+      var edgeEls = E.map(function (e, i) {
+        var ln = document.createElementNS(SVGNS, "line");
+        ln.setAttribute("class", "edge");
+        ln.id = "edge-" + i;
+        edgesG.appendChild(ln);
+        return ln;
+      });
+
+      // nodes (halo + core)
+      var haloEls = [], coreEls = [];
+      G.nodes.forEach(function (n, i) {
+        var halo = document.createElementNS(SVGNS, "circle");
+        halo.setAttribute("fill", n.color);
+        halo.setAttribute("class", "node-halo");
+        halo.id = "halo-" + i;
+        nodesG.appendChild(halo);
+        haloEls.push(halo);
+      });
+      G.nodes.forEach(function (n, i) {
+        var core = document.createElementNS(SVGNS, "circle");
+        core.setAttribute("fill", n.color);
+        core.setAttribute("class", "node-core");
+        core.id = "core-" + i;
+        nodesG.appendChild(core);
+        coreEls.push(core);
+      });
+
+      // ---------- world-space star field (deterministic; no runtime randomness) ----------
+      // Mirrors web/starfield.js: cool-white twinkling points in world space, so the outro
+      // tilt + slow rotation read as real depth parallax (a galaxy you drift through). The
+      // field blooms in only once the constellation tilts into 3D (~16s), exactly as the
+      // real feature is 3D-only. Positions are seeded by a small LCG so every render is identical.
+      function mkRng(seed) { var s = seed >>> 0; return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+      var STARS = (function () {
+        var rng = mkRng(0x6d696e64), out = []; // seed "mind"
+        for (var i = 0; i < 460; i++) {
+          out.push({
+            x: rng() * 1920, y: rng() * 1080,
+            d: 0.25 + rng() * 0.75,        // depth: bigger + more parallax when nearer
+            ph: rng() * Math.PI * 2,       // twinkle phase
+            sp: 0.6 + rng() * 1.0,         // twinkle speed
+          });
+        }
+        return out;
+      })();
+      var starsCtx = document.getElementById("stars").getContext("2d");
+
+      // ---------- per-frame renderer ----------
+      var AD = window.AUDIO_DATA;
+      var FPS = 30, DUR_FRAMES = 600; // 20.0s
+
+      function smooth(a, b, x) {
+        if (x <= a) return 0; if (x >= b) return 1;
+        var t = (x - a) / (b - a); return t * t * (3 - 2 * t);
+      }
+      function glowEnv(f) {
+        // ramp up into the bloom, hold, gentle fade at the very end
+        var up = smooth(90, 262, f);     // 3.0s -> 8.74s
+        var down = 1 - smooth(560, 600, f);
+        return Math.min(up, down) * 0.85 + 0.05 * smooth(0, 90, f);
+      }
+
+      function render(f) {
+        var ad = AD.frames[f] || AD.frames[AD.frames.length - 1];
+        var bass = ad.b, treble = ad.t, energy = ad.e;
+        var env = glowEnv(f);
+
+        // background glow breathes with the bed
+        document.getElementById("core-glow").style.opacity = (0.10 + energy * 0.95) * env;
+
+        // nodes + their halos (ambient deterministic drift on top of GSAP base)
+        for (var i = 0; i < S.length; i++) {
+          var s = S[i];
+          var dx = Math.sin(f * 0.045 + i * 1.7) * 1.4;
+          var dy = Math.cos(f * 0.052 + i * 1.13) * 1.4;
+          var x = s.bx + dx, y = s.by + dy;
+          var r = s.r * s.scale;
+          var co = coreEls[i], ha = haloEls[i];
+          co.setAttribute("cx", x); co.setAttribute("cy", y);
+          co.setAttribute("r", Math.max(0.01, r));
+          co.style.opacity = s.alpha;
+          ha.setAttribute("cx", x); ha.setAttribute("cy", y);
+          ha.setAttribute("r", Math.max(0.01, r * (2.5 + bass * 0.9)));
+          ha.style.opacity = s.alpha * 0.16 * (0.55 + env * 0.7);
+          s._x = x; s._y = y; // cache for edges
+        }
+        // edges follow current node positions
+        for (var j = 0; j < E.length; j++) {
+          var e = E[j], a = S[e.s], b = S[e.d], ln = edgeEls[j];
+          ln.setAttribute("x1", a._x); ln.setAttribute("y1", a._y);
+          ln.setAttribute("x2", b._x); ln.setAttribute("y2", b._y);
+          ln.style.opacity = e.alpha;
+        }
+        // outro wordmark treble glow
+        var wm = document.getElementById("wordmark");
+        if (f > 510) {
+          wm.style.textShadow = "0 0 " + (10 + treble * 60) + "px rgba(87,199,164,0.45)";
+        }
+
+        // ---- star field: blooms as the stage tilts into 3D (~16s), holds, fades with the end ----
+        starsCtx.clearRect(0, 0, 1920, 1080);
+        var sUp = smooth(478, 540, f);            // 15.93s -> 18.0s fade-in
+        var sDown = 1 - smooth(572, 600, f);      // fade out with the final cut
+        var sEnv = Math.min(sUp, sDown) * (0.85 + energy * 0.5); // breathe subtly with the bed
+        if (sEnv > 0.002) {
+          var prog = (f - 478) / 30;              // seconds into the galaxy reveal
+          var rot = prog * 0.014;                 // slow orbit about centre -> parallax
+          var cs = Math.cos(rot), sn = Math.sin(rot);
+          var sway = Math.sin(prog * 0.5) * 22;
+          starsCtx.globalCompositeOperation = "lighter";
+          starsCtx.fillStyle = "#cfe0ff";
+          for (var k = 0; k < STARS.length; k++) {
+            var st = STARS[k];
+            var px = st.x - 960, py = st.y - 540;
+            var rx = px * cs - py * sn, ry = px * sn + py * cs;
+            var x = 960 + rx + sway * st.d;
+            var y = 540 + ry + Math.sin(prog * 0.4 + st.ph) * 5 * st.d;
+            var tw = 0.45 + 0.55 * Math.sin(prog * st.sp * 1.8 + st.ph);
+            var rad = (0.7 + st.d * 1.7) * (0.8 + 0.5 * tw);
+            starsCtx.globalAlpha = Math.min(sEnv * (0.12 + 0.6 * tw) * (0.5 + 0.6 * st.d), 0.92);
+            starsCtx.beginPath();
+            starsCtx.arc(x, y, rad, 0, 6.2832);
+            starsCtx.fill();
+          }
+          starsCtx.globalAlpha = 1;
+          starsCtx.globalCompositeOperation = "source-over";
+        }
+      }
+
+      // ---------- timeline ----------
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      // per-frame sampler (drives renderer + audio-reactivity), seek-safe
+      for (var f = 0; f < DUR_FRAMES; f++) {
+        tl.call(render, [f], f / FPS);
+      }
+
+      // --- Scene 1: scattered notes --- (graph dim at scatter; caption in)
+      tl.fromTo("#cap-s1 h1", { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.9, ease: "power3.out" }, 0.5);
+      tl.fromTo("#cap-s1 .sub", { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 1.15);
+      tl.to("#cap-s1 h1", { opacity: 0, y: -34, duration: 0.55, ease: "power2.in" }, 3.2);   // crossfade handoff
+      tl.to("#cap-s1 .sub", { opacity: 0, y: -22, duration: 0.45, ease: "power2.in" }, 3.25);
+
+      // produced chrome eases in (stays faint through the body)
+      tl.fromTo("#chrome-brand", { opacity: 0, x: -16 }, { opacity: 0.92, x: 0, duration: 0.7, ease: "power2.out" }, 3.4);
+      tl.fromTo("#chrome-url", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "power2.out" }, 3.6);
+      tl.fromTo("#chrome-stat", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "power2.out" }, 3.7);
+
+      // --- Scene 2: the bloom --- (nodes fly scatter -> settled, brighten; edges draw in)
+      G.nodes.forEach(function (n, i) {
+        if (S[i].late) return; // late nodes wait for scene 4
+        tl.to(S[i], {
+          bx: S[i].tx, by: S[i].ty, alpha: 1, scale: 1,
+          duration: 2.7, ease: "power2.inOut",
+        }, 4.0 + i * 0.05);
+      });
+      // edges draw in, landing the "connected" climax on the strong cue
+      E.forEach(function (e, j) {
+        if (e.agent) return; // agent edges arrive in scene 4
+        tl.to(E[j], { alpha: 0.85, duration: 0.5, ease: "power2.out" }, 7.0 + j * 0.07); // beat-locked: ~8.74 climax
+      });
+      // scene-2 caption
+      tl.fromTo("#cap-s2 .line", { opacity: 0, y: 38 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 5.4);
+      tl.to("#cap-s2 .line", { opacity: 0, y: -28, duration: 0.5, ease: "power2.in" }, 9.2); // crossfade handoff
+
+      // --- Scene 3: topics find themselves --- (hulls + labels bloom; bridges dim)
+      G.comms.forEach(function (c, k) {
+        tl.fromTo("#hull-" + c.id, { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.out" }, 9.7 + k * 0.55); // beat-grid: 9.83 / 10.37 / 10.93
+        tl.fromTo("#clabel-" + c.id, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 9.95 + k * 0.55);
+      });
+      // bridges (inter-community edges) settle back so clusters read as distinct
+      E.forEach(function (e, j) {
+        if (e.agent) return;
+        if (G.nodes[e.s].comm !== G.nodes[e.d].comm) {
+          tl.to(E[j], { alpha: 0.32, duration: 0.7, ease: "sine.inOut" }, 9.8); // dim cross-community bridges
+        }
+      });
+      tl.fromTo("#cap-s3 .line", { opacity: 0, y: 38 }, { opacity: 1, y: 0, duration: 0.8, ease: "expo.out" }, 9.85);
+      tl.fromTo("#cap-s3 .note", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power2.out" }, 10.35);
+      tl.to("#cap-s3 .line", { opacity: 0, y: -26, duration: 0.5, ease: "power2.in" }, 13.0); // crossfade handoff
+      tl.to("#cap-s3 .note", { opacity: 0, duration: 0.4, ease: "power2.in" }, 13.0);
+      // cluster labels clear before the ingest panel slides over the left cluster
+      tl.to("#clabels", { opacity: 0, duration: 0.5, ease: "power2.in" }, 12.4);
+
+      // --- Scene 4: grown by agents --- (ingest panel types in; 4 nodes pop on beats)
+      tl.fromTo("#ingest", { opacity: 0, x: -30, scale: 0.97 }, { opacity: 1, x: 0, scale: 1, duration: 0.6, ease: "power3.out" }, 12.8);
+      var ingLines = document.querySelectorAll("#ingest .l");
+      ingLines.forEach(function (el, k) {
+        tl.fromTo(el, { opacity: 0, x: 10 }, { opacity: 1, x: 0, duration: 0.28, ease: "power1.out" }, 13.0 + k * 0.16);
+      });
+      // node pops on the beat grid (13.11, 13.64, 14.20, 14.73)
+      var POP_T = { "retrieval-augmentation": 13.11, "a-researcher": 13.64, "louvain-clustering": 14.20, "metadata-page": 14.73 };
+      G.nodes.forEach(function (n, i) {
+        if (!S[i].late) return;
+        var t = POP_T[n.id] || 13.5; // beat-grid
+        tl.fromTo(S[i], { alpha: 0, scale: 0 }, { alpha: 1, scale: 1, duration: 0.55, ease: "back.out(1.9)" }, t);
+      });
+      // agent edges fade in just after their nodes
+      E.forEach(function (e, j) {
+        if (!e.agent) return;
+        var lateName = S[e.s].late ? G.nodes[e.s].id : G.nodes[e.d].id;
+        var t = (POP_T[lateName] || 13.6) + 0.2;
+        tl.to(E[j], { alpha: 0.75, duration: 0.5, ease: "power2.out" }, t);
+      });
+      tl.fromTo("#cap-s4 .line", { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 13.4);
+
+      // --- handoff to outro: dim the body, tilt the stage (hint of 3D) ---
+      tl.to("#cap-s4 .line", { opacity: 0, y: -24, duration: 0.5, ease: "power2.in" }, 16.0);
+      tl.to("#ingest", { opacity: 0, x: -24, duration: 0.5, ease: "power2.in" }, 16.0);
+      tl.to(["#chrome-brand", "#chrome-url", "#chrome-stat"], { opacity: 0, duration: 0.5, ease: "power2.in" }, 16.0);
+      tl.to("#stage", { rotateX: 9, rotateY: -13, scale: 0.84, y: -26, opacity: 0.42, duration: 1.5, ease: "power2.inOut" }, 16.1);
+
+      // --- Scene 5: outro wordmark + tagline + flex subline ---
+      tl.fromTo("#outro", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "power1.out" }, 16.6);
+      tl.fromTo("#wordmark", { opacity: 0, scale: 0.9, y: 18 }, { opacity: 1, scale: 1, y: 0, duration: 0.7, ease: "power3.out" }, 17.0); // beat-locked: 17.47 settle
+      tl.fromTo("#tagline", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 17.7);
+      tl.fromTo("#subline", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 18.6);
+
+      // --- final fade (only the last scene may exit) ---
+      tl.to(["#outro", "#stage-wrap", "#bg-grain"], { opacity: 0, duration: 1.0, ease: "power2.in" }, 19.0);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
