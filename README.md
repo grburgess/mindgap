@@ -2,7 +2,7 @@
 
 **Give an agent a goal and a place to remember.** It loops — reading what's known, researching, writing back evidence-linked findings — and a knowledge graph grows itself across sessions. `mindgap` is that memory: a local, org-roam-style graph for research and project knowledge (concepts, definitions, software, repos, Confluence pages, arXiv papers, people, teams) that autonomous loop sessions read *before* they work and write *after* — markdown nodes densified with `[[wiki-links]]`, every node carrying its source URLs, rendered live in 2D/3D. You can hand-curate via CLI + web UI too; the agents just never stop adding.
 
-<p align="center"><img src="assets/demo.gif" alt="mindgap web UI — force-directed knowledge graph spreading into clusters" width="900"></p>
+<p align="center"><img src="assets/demo.gif" alt="mindgap web UI — the knowledge graph as a 3D star-field galaxy, topic clusters glowing as nebula orbs" width="900"></p>
 
 ## The idea
 
@@ -114,7 +114,7 @@ The UI is vanilla JS with no build step, drawing `force-graph`/`3d-force-graph`,
 
 ![2D topic clusters](assets/ui-2d.gif)
 
-**3D mode.** The same graph in three dimensions — drag to orbit, scroll to zoom.
+**3D mode.** The same graph in three dimensions — drag to orbit, scroll to zoom. A twinkling, world-space star field sits behind the scene, so the graph reads as a galaxy you drift through.
 
 ![3D mode](assets/ui-3d.gif)
 

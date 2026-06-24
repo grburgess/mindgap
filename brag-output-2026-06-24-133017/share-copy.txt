@@ -1,0 +1,1 @@
+Introducing mindgap: give an agent a goal and a place to remember, and a knowledge graph grows itself — concepts, papers, repos and people that connect themselves, cluster by topic, and drift through a 3D star field. Local, offline, zero pip deps. 🌌
