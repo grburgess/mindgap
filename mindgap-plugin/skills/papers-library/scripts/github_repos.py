@@ -59,9 +59,8 @@ def build(repos, papers):
               "body": "Author/maintainer hub.", "tags": ["papers-library"],
               "confidence": 1.0, "created_by": CREATED_BY}]
     nodes += [repo_node(r) for r in uniq]
-    # Hub edges only for input repos, not flagships
     edges = [{"src": "repo-" + slugify(r["name"]), "dst": HUB_ID, "rel": "relates_to",
-              "created_by": CREATED_BY} for r in repos]
+              "created_by": CREATED_BY} for r in uniq]
     edges += auto_links(uniq, papers)
     return {"nodes": nodes, "edges": edges, "created_by": CREATED_BY}
 

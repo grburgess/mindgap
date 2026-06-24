@@ -26,7 +26,12 @@ class TestRepos(unittest.TestCase):
     def test_build_anchors_every_repo_to_hub(self):
         p = G.build(REPOS, PAPERS)
         hub_edges = {e["src"] for e in p["edges"] if e["dst"] == "grburgess" and e["rel"] == "relates_to"}
-        self.assertEqual(hub_edges, {"repo-popsynth", "repo-cv", "repo-dotfiles"})
+        self.assertEqual(hub_edges,
+            {"repo-popsynth", "repo-cv", "repo-dotfiles", "repo-threeml", "repo-astromodels"})
+        # flagships are also present as nodes
+        node_ids = {n["id"] for n in p["nodes"]}
+        self.assertIn("repo-threeml", node_ids)
+        self.assertIn("repo-astromodels", node_ids)
         self.assertEqual(p["created_by"], "skill:papers-library")
 
 if __name__ == "__main__":
