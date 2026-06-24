@@ -18,13 +18,13 @@ class TestRepos(unittest.TestCase):
         self.assertEqual(n["urls"][0]["url"], "https://github.com/grburgess/popsynth")
         self.assertIn("papers-library", n["tags"])
     def test_auto_links_exact_token_only(self):
-        edges = G.auto_links(REPOS, PAPERS)
+        edges = G.auto_links(REPOS, PAPERS, {"arxiv-2107-12404"})
         self.assertIn(("repo-popsynth", "arxiv-2107-12404", "implements"),
                       {(e["src"], e["dst"], e["rel"]) for e in edges})
         # 'cv' is < 4 chars → must NOT link despite appearing in a title
         self.assertFalse(any(e["src"] == "repo-cv" for e in edges))
     def test_build_anchors_every_repo_to_hub(self):
-        p = G.build(REPOS, PAPERS)
+        p = G.build(REPOS, PAPERS, set())
         hub_edges = {e["src"] for e in p["edges"] if e["dst"] == "grburgess" and e["rel"] == "relates_to"}
         self.assertEqual(hub_edges,
             {"repo-popsynth", "repo-cv", "repo-dotfiles", "repo-threeml", "repo-astromodels"})
@@ -33,6 +33,16 @@ class TestRepos(unittest.TestCase):
         self.assertIn("repo-threeml", node_ids)
         self.assertIn("repo-astromodels", node_ids)
         self.assertEqual(p["created_by"], "skill:papers-library")
+    def test_auto_link_requires_authored_paper(self):
+        repos = [{"name": "supernova", "owner": "grburgess", "description": "sn tools"}]
+        papers = [
+            {"id": "doi-essence", "title": "The ESSENCE Supernova Survey", "type": "paper"},  # NOT authored
+            {"id": "arxiv-mine", "title": "supernova rate paper", "type": "paper"},            # authored
+        ]
+        edges = G.auto_links(repos, papers, authored_ids={"arxiv-mine"})
+        dsts = {e["dst"] for e in edges}
+        self.assertIn("arxiv-mine", dsts)          # authored 'supernova' paper linked
+        self.assertNotIn("doi-essence", dsts)      # non-authored 'supernova' paper NOT linked
 
 if __name__ == "__main__":
     unittest.main()
