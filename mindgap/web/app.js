@@ -17,7 +17,7 @@ const TYPE_COLORS = {
 
 const SETTINGS_DEFAULTS = Object.freeze({
   charge: -260, linkDist: 55, linkStrength: 0.3, velocityDecay: 0.32, collide: true, // physics
-  labelMode: 'hubs', linkOpacity: 0.30, arrows: true,                                // visual
+  labelMode: 'hubs', linkOpacity: 0.30, arrows: true, starfield: true,                // visual
   colorBy: 'type', showHulls: true, showClusterLabels: true, clusterForce: false,    // clusters
   theme: 'editorial',                                                                // appearance
 });
@@ -359,6 +359,7 @@ function renderGraph() {
     return;
   }
   if (window.Glow3d) Glow3d.teardown();
+  if (window.Starfield) Starfield.teardown();
   if (graph && graph._destructor) graph._destructor();
   graphEl.innerHTML = '';
   const make = state.mode === '3d' ? ForceGraph3D : ForceGraph;
@@ -409,6 +410,7 @@ function renderGraph() {
     graph.nodeCanvasObjectMode(() => 'after').nodeCanvasObject(drawLabel2d);
   }
   if (state.mode === '3d' && window.Glow3d) Glow3d.install(graph, glowCtx);
+  if (state.mode === '3d' && window.Starfield) Starfield.install(graph, glowCtx);
   graph.onEngineStop(() => { if (state._needFit) { graph.zoomToFit(500, 60); state._needFit = false; } });
   state._needFit = true;
   mountedMode = state.mode;
@@ -886,6 +888,7 @@ function onSettingChange(kind) {
     refreshStyles();
     renderLegend();
     if (state.mode === '3d' && window.Glow3d) Glow3d.refresh();
+    if (state.mode === '3d' && window.Starfield) Starfield.refresh();
   }
 }
 
@@ -898,6 +901,7 @@ const RANGES = [
 const TOGGLES = [
   ['Collision', 'collide', 'physics'],
   ['Arrows', 'arrows', 'visual'],
+  ['Starfield', 'starfield', 'visual'],
 ];
 
 function renderSettings() {
@@ -947,6 +951,7 @@ function renderSettings() {
     saveSettings(); renderSettings(); applyTheme(state.settings.theme); applyForces(graph);
     state._needFit = true; graph.d3ReheatSimulation(); refreshStyles();
     if (state.mode === '3d' && window.Glow3d) Glow3d.refresh();
+    if (state.mode === '3d' && window.Starfield) Starfield.refresh();
   };
   $('#settings').querySelectorAll('input[type=range]').forEach((el) => {
     el.oninput = () => {
