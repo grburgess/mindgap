@@ -118,7 +118,30 @@ class TestPayload(unittest.TestCase):
         conn = R.open_ro(path)
         gi, gl = R.load(conn)
         self.assertEqual(len(gi), len(items))
+        self.assertEqual(len(gl), len(lists))
+        p = R.build_payload(gi, gl)
+        self.assertIn("nodes", p)
+        self.assertIn("edges", p)
         os.remove(path)
+
+    def test_empty_parent_kept_when_child_has_core(self):
+        items = [ITEM_DOI]  # listed below under the CHILD
+        lists = [
+            {"id": "P", "name": "Surveys", "parent_id": None, "item_ids": []},       # 0 papers
+            {"id": "C", "name": "Selection Effects", "parent_id": "P", "item_ids": [ITEM_DOI["id"]]},
+            {"id": "J1", "name": "junkroot", "parent_id": None, "item_ids": []},      # empty tree...
+            {"id": "J2", "name": "junkchild", "parent_id": "J1", "item_ids": []},     # ...both dropped
+        ]
+        p = R.build_payload(items, lists)
+        tids = {n["id"] for n in p["nodes"] if n["type"] == "concept"}
+        self.assertIn("topic-surveys", tids)            # empty parent kept: its tree has a core paper
+        self.assertIn("topic-selection-effects", tids)
+        self.assertNotIn("topic-junkroot", tids)        # fully-empty tree dropped
+        self.assertNotIn("topic-junkchild", tids)
+        # no dangling: every edge endpoint is a node
+        node_ids = {n["id"] for n in p["nodes"]}
+        for e in p["edges"]:
+            self.assertIn(e["src"], node_ids); self.assertIn(e["dst"], node_ids)
 
 
 if __name__ == "__main__":

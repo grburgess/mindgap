@@ -110,12 +110,18 @@ def build_payload(items, lists, limit=0):
     if limit:
         core = set(sorted(core)[:limit])
 
-    has_child = {l.get("parent_id") for l in lists if l.get("parent_id") in by_lid}
-    core_count = {}
-    for l in lists:
-        core_count[l["id"]] = sum(1 for x in (l.get("item_ids") or []) if x in core)
-    kept_lid = {l["id"] for l in lists
-                if core_count[l["id"]] > 0 or l.get("parent_id") in by_lid or l["id"] in has_child}
+    core_count = {l["id"]: sum(1 for x in (l.get("item_ids") or []) if x in core) for l in lists}
+    # weakly-connected tree = a list and its chain of existing parents; keep a tree iff
+    # any topic in it has a core paper (drops fully-empty island trees like auto_import).
+    parent_of = {l["id"]: (l["parent_id"] if l.get("parent_id") in by_lid else None) for l in lists}
+    def _root(i):
+        seen = set()
+        while parent_of.get(i) and i not in seen:
+            seen.add(i); i = parent_of[i]
+        return i
+    comp = {l["id"]: _root(l["id"]) for l in lists}
+    comp_has_core = {comp[lid] for lid in comp if core_count[lid] > 0}
+    kept_lid = {lid for lid in comp if comp[lid] in comp_has_core}
 
     nodes, edges = [], []
     nodes.append({"id": HUB_ID, "title": HUB_TITLE, "type": "person",
