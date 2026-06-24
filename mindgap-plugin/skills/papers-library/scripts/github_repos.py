@@ -35,13 +35,15 @@ def repo_node(r):
             "tags": ["papers-library", "github"], "confidence": 0.95, "created_by": CREATED_BY}
 
 
-def auto_links(repos, papers):
+def auto_links(repos, papers, authored_ids):
     edges = []
     for r in repos:
         name = r["name"].lower()
         if len(name) < 4:
             continue
         for p in papers:
+            if p["id"] not in authored_ids:
+                continue
             toks = set(re.findall(r"[a-z][a-z0-9_]+", (p.get("title") or "").lower()))
             if name in toks:
                 edges.append({"src": "repo-" + slugify(r["name"]), "dst": p["id"],
@@ -49,7 +51,7 @@ def auto_links(repos, papers):
     return edges
 
 
-def build(repos, papers):
+def build(repos, papers, authored_ids):
     seen, uniq = set(), []
     for r in repos + ORG_FLAGSHIPS:                 # dedupe by repo id, org flagships win ties last
         rid = "repo-" + slugify(r["name"])
@@ -61,7 +63,7 @@ def build(repos, papers):
     nodes += [repo_node(r) for r in uniq]
     edges = [{"src": "repo-" + slugify(r["name"]), "dst": HUB_ID, "rel": "relates_to",
               "created_by": CREATED_BY} for r in uniq]
-    edges += auto_links(uniq, papers)
+    edges += auto_links(uniq, papers, authored_ids)
     return {"nodes": nodes, "edges": edges, "created_by": CREATED_BY}
 
 
@@ -80,9 +82,12 @@ def main(argv=None):
     ap.add_argument("--out")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
-    papers = [n for n in json.load(open(args.papers))["nodes"] if n.get("type") == "paper"]
+    data = json.load(open(args.papers))
+    papers = [n for n in data["nodes"] if n.get("type") == "paper"]
+    authored_ids = {e["src"] for e in data.get("edges", [])
+                    if e.get("dst") == "grburgess" and e.get("rel") == "relates_to"}
     repos = json.load(open(args.repos_json)) if args.repos_json else fetch_repos()
-    payload = build(repos, papers)
+    payload = build(repos, papers, authored_ids)
     if args.dry_run:
         nl = sum(1 for e in payload["edges"] if e["rel"] == "implements")
         print(f"repos={len(repos)} nodes={len(payload['nodes'])} edges={len(payload['edges'])} auto_links={nl}",
