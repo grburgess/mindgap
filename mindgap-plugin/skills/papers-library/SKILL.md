@@ -15,8 +15,18 @@ There is no public Papers API, so work from an **export** (BibTeX or RIS — bot
   *All Papers* → *Export as → BibTeX (.bib)*; a collection can be exported the same way.
 - **Or the auto-generated `.bib`:** the Papers **desktop** app keeps a `.bib` per library inside
   the Papers Library folder (default `~/Documents/Papers Library/`). Point the skill at it.
+- **ReadCube desktop SQLite (no export needed):** the modern ReadCube *Papers* app keeps a local
+  library DB at `~/Library/Application Support/Papers/<uuid>.db`. Read it directly with
+  `python3 <skill>/scripts/readcube_db.py [--db PATH] [--dry-run] [--out payload.json]`. This is
+  **preferred** when the user can't/won't export BibTeX, and when you want their **lists/collections
+  preserved as a topic taxonomy** — a `.bib`/`.ris` export drops the list hierarchy and membership.
+  `readcube_db.py` emits paper nodes + topic `concept` nodes (with `part_of` hierarchy + membership)
+  in one ingest payload; pair it with `scripts/github_repos.py --papers payload.json` to add the
+  user's GitHub repos and link them to the library (hub anchor + authored-paper auto-links). The
+  connection is read-only/immutable, so a running Papers app is never touched.
 - **Legacy Papers 3 (macOS):** export to `.bib`/`.ris` first (File → Export), or script it via
-  AppleScript. The local SQLite DB (`Database.papersdb`) is a brittle last resort — prefer an export.
+  AppleScript. Its old SQLite DB (`Database.papersdb`) has a different schema from the ReadCube
+  store above — prefer an export for Papers 3.
 
 Ask the user for the path to the `.bib`/`.ris` file if they did not provide one. Exports carry
 references only, not PDFs — that is fine; this skill works from metadata.
