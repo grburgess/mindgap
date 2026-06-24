@@ -90,15 +90,23 @@ Nuclei (40), Particle Acceleration (78).
      topic node(s), so it is reachable from the whole paper neighborhood in 2 hops
      (avoids hundreds of noisy direct edges, e.g. to all 580 GRB papers).
    - `repo → paper` (`implements`/`cites`) — direct edges to the repo's flagship papers.
-   - Each edge: `confidence` 0.6–0.8 + one-line rationale in `created_by`/note.
+   - Each edge: `confidence` 0.6–0.8 + one-line rationale in the edge note.
    - **Densest** across the 5 emphasis domains.
    Parent process validates every id against the ingested graph before ingest;
-   `created_by: "loop:readcube-link"`.
+   `created_by: "skill:papers-library"`.
 3. Non-research repos: hub anchor only.
 
 ## Build order & verification
 
-Importer: `scripts/import_readcube.py` (mindgap repo), idempotent, with `--dry-run`.
+This implements the repo's existing **`papers-library` skill** (P1–P2 import,
+extended; P3 discovery / P4 ideation are out of scope), reading the ReadCube SQLite
+store directly rather than a BibTeX export (the export drops the list hierarchy that
+is this design's backbone, and the user has no export). Two stdlib scripts sit beside
+the skill's `parse_refs.py`:
+- `mindgap-plugin/skills/papers-library/scripts/readcube_db.py` — papers + topics, `--dry-run`.
+- `mindgap-plugin/skills/papers-library/scripts/github_repos.py` — repos + hub + auto links.
+
+All writes carry `created_by: "skill:papers-library"`.
 
 1. **Dry-run:** print node/edge counts, a sample of each node type, and an
    unmatched-id / collision report. Stop and eyeball.
@@ -124,7 +132,8 @@ papers 0.9 · topics 0.9 · repos 0.95 · auto repo↔paper 0.95 · semantic lin
 - Graph size (~2,400 nodes / ~3,900 edges): fine for SQLite; the force-graph web UI
   will be heavier but functional.
 - ReadCube app may be running → immutable read-only connection mandated.
-- Reversible: delete by `created_by in ('loop:readcube-import','loop:readcube-link')`.
+- Reversible: graph held only 8 `seed` nodes beforehand, so the entire import is
+  exactly the `created_by = 'skill:papers-library'` content; delete by that provenance.
 
 ## Out of scope
 
