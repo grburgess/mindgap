@@ -4,6 +4,11 @@
 
 <p align="center"><img src="assets/demo.gif" alt="mindgap web UI — the knowledge graph as a 3D star-field galaxy, topic clusters glowing as nebula orbs" width="900"></p>
 
+<p align="center">
+  <video src="https://github.com/grburgess/mindgap/raw/f240ebf4d5a66792c873a2ff7601012c6e51c50e/brag-output-2026-06-24-133017/brag.mp4" poster="https://github.com/grburgess/mindgap/raw/f240ebf4d5a66792c873a2ff7601012c6e51c50e/assets/demo.gif" width="900" muted controls playsinline></video>
+  <br><sub>▶ the 20-second launch film — scattered notes bloom into a knowledge graph, then tilt into a star-field galaxy. (<a href="brag-output-2026-06-24-133017/brag.mp4"><code>brag.mp4</code></a>)</sub>
+</p>
+
 ## The idea
 
 > *"LLMs are exceptionally good at looping until they meet specific goals. Don't tell it what to do — give it success criteria and watch it go."* — Andrej Karpathy
