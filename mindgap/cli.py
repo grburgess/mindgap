@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import config, db
+from . import config, db, mine
 
 
 def _url_entry(spec):
@@ -192,6 +192,32 @@ def cmd_lint(args):
         print(f"  {r['id']} (conf {r['confidence']}) {r['title']}")
 
 
+def cmd_mine(args):
+    conn = db.connect()
+    if args.mine_cmd == "enrich":
+        out = mine.enrich(conn, args.seed, k=args.k)
+        if args.json:
+            print(json.dumps(out, indent=2)); return
+        if out["note"]:
+            print(f"# {out['note']}")
+        for r in out["results"]:
+            print(f"{r['score']:.4f}\t{r['id']}\t{r['title']} [{r['type']}]")
+    elif args.mine_cmd == "learn":
+        out = mine.learn(conn, top=args.top, emit=not args.no_emit)
+        if args.json:
+            print(json.dumps(out, indent=2)); return
+        for q in out["queue"]:
+            print(f"{q['score']:.4f}\t{q['id']}\t{q['title']} [{q['type']}] — {', '.join(q['reasons'])}")
+        if out["emitted"]:
+            print(f"# wrote {out['emitted']}")
+    elif args.mine_cmd == "connect":
+        if args.apply:
+            out = mine.connect_apply(conn, json.load(open(args.apply)))
+        else:
+            out = mine.connect_candidates(conn, k=args.k)
+        print(json.dumps(out, indent=2))
+
+
 def cmd_serve(args):
     from .server import run
     run(args.port, not args.no_open)
@@ -359,6 +385,20 @@ def main(argv=None):
     p = sub.add_parser("lint", help="graph health report (orphans/stubs/dups/stale)")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=cmd_lint)
+
+    p = sub.add_parser("mine", help="analytic mining: enrich / learn / connect")
+    msub = p.add_subparsers(dest="mine_cmd", required=True)
+    me = msub.add_parser("enrich", help="RWR-ranked relevant subgraph for a seed")
+    me.add_argument("seed"); me.add_argument("--k", type=int, default=12)
+    me.add_argument("--json", action="store_true")
+    ml = msub.add_parser("learn", help="ranked learning frontier + frontier.json for loops")
+    ml.add_argument("--top", type=int, default=20)
+    ml.add_argument("--no-emit", action="store_true")
+    ml.add_argument("--json", action="store_true")
+    mc = msub.add_parser("connect", help="latent-link suggestions (read-only) or --apply decisions")
+    mc.add_argument("--k", type=int, default=15)
+    mc.add_argument("--apply", help="path to a pre-adjudicated decisions.json to commit")
+    p.set_defaults(func=cmd_mine)
 
     p = sub.add_parser("serve", help="web UI")
     p.add_argument("--port", type=int, default=8765)

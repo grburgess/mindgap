@@ -311,6 +311,24 @@ def tool_context(conn, args):
     return {"markdown": "\n".join(lines), "matched": len(nodes)}
 
 
+def tool_mine_enrich(conn, args):
+    from . import mine
+    seed = args.get("seed")
+    if not isinstance(seed, str) or not seed:
+        raise ToolError("seed is required")
+    return mine.enrich(conn, seed, k=args.get("k", 12))
+
+
+def tool_mine_learn(conn, args):
+    from . import mine
+    return mine.learn(conn, top=args.get("top", 20), emit=args.get("emit", True))
+
+
+def tool_mine_connect(conn, args):
+    from . import mine
+    return mine.connect_candidates(conn, k=args.get("k", 15))
+
+
 def tool_stats(conn, args):
     return db.stats(conn)
 
@@ -481,6 +499,34 @@ TOOLS = [
         "description": "Delete a node (cascades its edges). Destructive; for stub cleanup.",
         "handler": tool_remove_node,
         "inputSchema": _schema({"id": _STR}, required=["id"]),
+    },
+    {
+        "name": "mindgap_mine_enrich",
+        "description": "Enrich: random-walk-with-restart ranked relevant subgraph for a seed "
+                       "node/topic — reaches 2-3 hops, unlike 1-hop context. Read-only.",
+        "handler": tool_mine_enrich,
+        "inputSchema": _schema(
+            {"seed": _STR, "k": {"type": "integer", "minimum": 1, "maximum": 50}},
+            required=["seed"]),
+    },
+    {
+        "name": "mindgap_mine_learn",
+        "description": "Learn: ranked learning frontier (thin spots / stubs / fresh-thin papers / "
+                       "in-demand-thin concepts) with reasons; writes frontier.json for the loops. "
+                       "Read-only except the frontier file.",
+        "handler": tool_mine_learn,
+        "inputSchema": _schema(
+            {"top": {"type": "integer", "minimum": 1, "maximum": 100},
+             "emit": {"type": "boolean"}}),
+    },
+    {
+        "name": "mindgap_mine_connect",
+        "description": "Connect: guarded Adamic-Adar latent-link suggestions (non-adjacent pairs "
+                       "that should plausibly be linked) with both node bodies + shared support, "
+                       "for you to adjudicate. Read-only — write confirmed links via mindgap_ingest "
+                       "(created_by 'mine:connect').",
+        "handler": tool_mine_connect,
+        "inputSchema": _schema({"k": {"type": "integer", "minimum": 1, "maximum": 50}}),
     },
 ]
 

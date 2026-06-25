@@ -41,6 +41,10 @@ class TestConfigPaths(unittest.TestCase):
         self.assertTrue(dbf.parent.is_dir())
         self.assertEqual(c.snapshots_dir(), Path(self.tmp) / "snapshots")
 
+    def test_frontier_path(self):
+        c = self.config
+        self.assertEqual(c.frontier_path(), Path(self.tmp) / "frontier.json")
+
 
 class TestInit(unittest.TestCase):
     def setUp(self):

@@ -38,3 +38,7 @@ def snapshots_dir() -> Path:
     d = data_dir() / "snapshots"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def frontier_path() -> Path:
+    return data_dir() / "frontier.json"

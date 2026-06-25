@@ -52,6 +52,9 @@ TOOL_NAMES = {
     "mindgap_stats",
     "mindgap_export",
     "mindgap_remove_node",
+    "mindgap_mine_enrich",
+    "mindgap_mine_learn",
+    "mindgap_mine_connect",
 }
 
 
