@@ -1,8 +1,8 @@
 /* mindgap UI — vanilla JS against the /api contract. CDN globals: ForceGraph, ForceGraph3D, marked, DOMPurify. */
 'use strict';
 
-const TYPES = ['concept', 'definition', 'software', 'repo', 'page', 'paper', 'person', 'team', 'stub'];
-const RELS = ['relates_to', 'defines', 'implements', 'depends_on', 'cites', 'part_of', 'mentions'];
+const TYPES = ['concept', 'definition', 'software', 'repo', 'page', 'paper', 'person', 'team', 'design', 'feature', 'learning', 'jira-ticket', 'stub'];
+const RELS = ['relates_to', 'defines', 'implements', 'depends_on', 'cites', 'part_of', 'mentions', 'assigned_to', 'reported_by'];
 const TYPE_COLORS = {
   concept: '#57c7a4',
   definition: '#a78bfa',
@@ -12,12 +12,16 @@ const TYPE_COLORS = {
   paper: '#e76f51',
   person: '#f28ab2',
   team: '#9ae65a',
+  design: '#d946ef',
+  feature: '#f59e0b',
+  learning: '#10b981',
+  'jira-ticket': '#06b6d4',
   stub: '#5b6663',
 };
 
 const SETTINGS_DEFAULTS = Object.freeze({
   charge: -260, linkDist: 55, linkStrength: 0.3, velocityDecay: 0.32, collide: true, // physics
-  labelMode: 'hubs', linkOpacity: 0.30, arrows: true, starfield: true,                // visual
+  labelMode: 'hubs', linkOpacity: 0.30, arrows: true, starfield: true, autoRotate: false, edgeFlow: true, bloom: true, warp: true, ambient: true, // visual
   colorBy: 'type', showHulls: true, showClusterLabels: true, clusterForce: false,    // clusters
   theme: 'editorial',                                                                // appearance
 });
@@ -72,8 +76,11 @@ const THEMES = {
   graphite:  { '--bg': '#0e0e10', '--bg-raised': '#16161a', '--bg-panel': '#131316', '--line': '#2a2a30', '--text': '#e0ddd6', '--dim': '#8a857c', '--green': '#e0a458', '--purple': '#5ec8b8', '--danger': '#e8765a' },
   aubergine: { '--bg': '#120c16', '--bg-raised': '#1a1020', '--bg-panel': '#160d1b', '--line': '#2e2138', '--text': '#e6dcea', '--dim': '#988aa0', '--green': '#c77dff', '--purple': '#ff6ac1', '--danger': '#ff7a7a' },
   carbon:    { '--bg': '#050505', '--bg-raised': '#0d0d0f', '--bg-panel': '#0a0a0c', '--line': '#232327', '--text': '#ececf0', '--dim': '#80808a', '--green': '#57c7a4', '--purple': '#7aa2ff', '--danger': '#e76f51' },
+  // Cape — Cape Analytics (a Moody's company) brand: deep navy #002B49 base, signature mint
+  // #85FFB3 + indigo #5A4FFF accents. Geospatial/aerial feel; pairs with the 3D glow + stars.
+  cape:      { '--bg': '#02192a', '--bg-raised': '#082842', '--bg-panel': '#061f34', '--line': '#14395a', '--text': '#dceaf3', '--dim': '#6f8ea6', '--green': '#85ffb3', '--purple': '#5a4fff', '--danger': '#ff6b5e' },
 };
-const THEME_NAMES = { editorial: 'Editorial', midnight: 'Midnight', graphite: 'Graphite', aubergine: 'Aubergine', carbon: 'Carbon' };
+const THEME_NAMES = { editorial: 'Editorial', midnight: 'Midnight', graphite: 'Graphite', aubergine: 'Aubergine', carbon: 'Carbon', cape: 'Cape' };
 function themeBg() { return (THEMES[state.settings.theme] || THEMES.editorial)['--bg']; }
 function applyTheme(name) {
   const t = THEMES[name] || THEMES.editorial;
@@ -353,6 +360,19 @@ function applyForces(g) {
 // passed to Glow3d (3D topic orbs) — thin getters, no coupling to app internals
 const glowCtx = { getClusters: () => state.clusters, getSettings: () => state.settings };
 
+// directional energy particles along links; a highlighted node's incident links pulse
+// brighter/faster in accent green, others stay faint. idempotent re-set of the accessors,
+// mirrors the linkColor highlight test (state.hoverHl || state.hl).
+function applyEdgeFlow(g) {
+  if (!g || !g.linkDirectionalParticles) return;
+  const hlId = () => { const hl = state.hoverHl || state.hl; return hl ? hl.id : null; };
+  const inc = (l) => { const s = l.source.id ?? l.source, t = l.target.id ?? l.target; const h = hlId(); return h && (s === h || t === h); };
+  g.linkDirectionalParticles((l) => state.settings.edgeFlow ? (inc(l) ? 4 : 2) : 0)
+   .linkDirectionalParticleSpeed((l) => inc(l) ? 0.012 : 0.006)
+   .linkDirectionalParticleWidth((l) => inc(l) ? 2.2 : 1.4)
+   .linkDirectionalParticleColor((l) => inc(l) ? 'rgba(87,199,164,0.9)' : 'rgba(150,170,160,0.45)');
+}
+
 function renderGraph() {
   if (graph && mountedMode === state.mode) {
     applyData(viewData());
@@ -360,6 +380,10 @@ function renderGraph() {
   }
   if (window.Glow3d) Glow3d.teardown();
   if (window.Starfield) Starfield.teardown();
+  if (window.AutoRotate) AutoRotate.teardown();
+  if (window.Bloom) Bloom.teardown();
+  if (window.Warp) Warp.teardown();
+  if (window.SpaceFx) SpaceFx.teardown();
   if (graph && graph._destructor) graph._destructor();
   graphEl.innerHTML = '';
   const make = state.mode === '3d' ? ForceGraph3D : ForceGraph;
@@ -408,6 +432,7 @@ function renderGraph() {
     .onBackgroundClick(closeSidebar)
     .graphData(viewData());
   applyForces(graph);
+  applyEdgeFlow(graph);
   if (state.mode === '2d') {
     graph.onRenderFramePre(drawHulls);
     graph.onRenderFramePost(drawClusterLabels);
@@ -415,6 +440,10 @@ function renderGraph() {
   }
   if (state.mode === '3d' && window.Glow3d) Glow3d.install(graph, glowCtx);
   if (state.mode === '3d' && window.Starfield) Starfield.install(graph, glowCtx);
+  if (state.mode === '3d' && window.AutoRotate) AutoRotate.install(graph, glowCtx);
+  if (state.mode === '3d' && window.Bloom) Bloom.install(graph, glowCtx);
+  if (state.mode === '3d' && window.Warp) Warp.install(graph, glowCtx);
+  if (state.mode === '3d' && window.SpaceFx) SpaceFx.install(graph, glowCtx);
   graph.onEngineStop(() => {
     if (state._needFit) { graph.zoomToFit(500, 60); state._needFit = false; }
     // auto-pause is on (force-graph default): when the engine cools the render loop stops
@@ -511,6 +540,7 @@ function centerOn(id, attempt = 0) {
     const d = Math.hypot(n.x, n.y, n.z || 0) || 1;
     const k = 1 + 140 / d;
     graph.cameraPosition({ x: n.x * k, y: n.y * k, z: (n.z || 0) * k }, n, 800);
+    if (window.Warp) Warp.trigger(n);
   } else {
     graph.centerAt(n.x, n.y, 600);
     if (graph.zoom() < 2.2) graph.zoom(2.2, 600);
@@ -780,10 +810,18 @@ function setMode(mode) {
   state.mode = mode;
   $('#mode-2d').classList.toggle('active', mode === '2d');
   $('#mode-3d').classList.toggle('active', mode === '3d');
+  $('#autorotate-toggle').classList.toggle('hidden', mode !== '3d');
   renderGraph(); // re-mount, same data + focus state
 }
 $('#mode-2d').onclick = () => setMode('2d');
 $('#mode-3d').onclick = () => setMode('3d');
+$('#autorotate-toggle').onclick = () => {
+  state.settings.autoRotate = !state.settings.autoRotate;
+  $('#autorotate-toggle').classList.toggle('active', state.settings.autoRotate);
+  saveSettings();
+  if (state.mode === '3d' && window.AutoRotate) AutoRotate.refresh();
+};
+$('#autorotate-toggle').classList.toggle('active', state.settings.autoRotate);
 
 $('#focus-reset').onclick = clearFocus;
 
@@ -912,8 +950,12 @@ function onSettingChange(kind) {
   } else {
     refreshStyles();
     renderLegend();
+    applyEdgeFlow(graph);
     if (state.mode === '3d' && window.Glow3d) Glow3d.refresh();
     if (state.mode === '3d' && window.Starfield) Starfield.refresh();
+    if (state.mode === '3d' && window.Bloom) Bloom.refresh();
+    if (state.mode === '3d' && window.Warp) Warp.refresh();
+    if (state.mode === '3d' && window.SpaceFx) SpaceFx.refresh();
   }
 }
 
@@ -927,6 +969,10 @@ const TOGGLES = [
   ['Collision', 'collide', 'physics'],
   ['Arrows', 'arrows', 'visual'],
   ['Starfield', 'starfield', 'visual'],
+  ['Edge flow', 'edgeFlow', 'visual'],
+  ['Bloom', 'bloom', 'visual'],
+  ['Warp', 'warp', 'visual'],
+  ['Ambient', 'ambient', 'visual'],
 ];
 
 function renderSettings() {
@@ -975,8 +1021,12 @@ function renderSettings() {
     state.settings = { ...SETTINGS_DEFAULTS };
     saveSettings(); renderSettings(); applyTheme(state.settings.theme); applyForces(graph);
     state._needFit = true; graph.d3ReheatSimulation(); refreshStyles();
+    applyEdgeFlow(graph);
     if (state.mode === '3d' && window.Glow3d) Glow3d.refresh();
     if (state.mode === '3d' && window.Starfield) Starfield.refresh();
+    if (state.mode === '3d' && window.Bloom) Bloom.refresh();
+    if (state.mode === '3d' && window.Warp) Warp.refresh();
+    if (state.mode === '3d' && window.SpaceFx) SpaceFx.refresh();
   };
   $('#settings').querySelectorAll('input[type=range]').forEach((el) => {
     el.oninput = () => {

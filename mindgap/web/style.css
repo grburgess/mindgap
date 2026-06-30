@@ -447,6 +447,7 @@ body.timeline-open #legend { bottom: 116px; }
 #legend .leg span { margin-left: auto; padding-left: 8px; }
 
 button.ghost.active { border-color: var(--green); color: var(--green); }
+#autorotate-toggle.active { color: var(--green); border-color: var(--green); }
 
 /* ---------- orphan chip ---------- */
 

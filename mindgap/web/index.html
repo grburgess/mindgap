@@ -11,6 +11,12 @@
 <script src="https://unpkg.com/force-graph"></script>
 <script src="https://unpkg.com/3d-force-graph"></script>
 <script type="module">import * as THREE from 'https://esm.sh/three@0.179'; window.THREE = THREE;</script>
+<script type="module">
+  import { EffectComposer } from 'https://esm.sh/three@0.179/examples/jsm/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'https://esm.sh/three@0.179/examples/jsm/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'https://esm.sh/three@0.179/examples/jsm/postprocessing/UnrealBloomPass.js';
+  window.__bloomAddons = { EffectComposer, RenderPass, UnrealBloomPass };
+</script>
 <script src="https://unpkg.com/marked/lib/marked.umd.js"></script>
 <link rel="icon" href="data:,">
 <script src="https://unpkg.com/dompurify/dist/purify.min.js"></script>
@@ -19,6 +25,10 @@
 <script src="/cluster.js"></script>
 <script src="/glow3d.js"></script>
 <script src="/starfield.js"></script>
+<script src="/autorotate.js"></script>
+<script src="/bloom.js"></script>
+<script src="/warp.js"></script>
+<script src="/spacefx.js"></script>
 </head>
 <body>
 <header id="header">
@@ -30,6 +40,7 @@
       <button id="mode-2d" class="active">2D</button>
       <button id="mode-3d">3D</button>
     </div>
+    <button id="autorotate-toggle" class="ghost hidden" title="auto-orbit (3D)">&#8635; orbit</button>
     <button id="focus-reset" class="ghost hidden" title="reset focus (Esc)">&#9678; unfocus</button>
     <button id="timeline-toggle" class="ghost" title="timeline">&#9202; timeline</button>
     <button id="settings-toggle" class="ghost" title="settings">&#9881; settings</button>
