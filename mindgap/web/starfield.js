@@ -80,6 +80,7 @@
     });
     stars = new T.Points(geo, mat);
     stars.frustumCulled = false;
+    stars.userData.bloom = true;      // opt into selective bloom (bloom.js); harmless when bloom is off
     stars.renderOrder = -10;          // draw behind nodes/edges/glow
     graph.scene().add(stars);
   }
