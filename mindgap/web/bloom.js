@@ -19,7 +19,7 @@
     const comp = graph.postProcessingComposer(); if (!comp) return;
     const dom = graph.renderer().domElement;
     const res = new T.Vector2(dom.clientWidth || 1, dom.clientHeight || 1);
-    pass = new A.UnrealBloomPass(res, 0.6, 0.4, 0.2);   // strength, radius, threshold
+    pass = new A.UnrealBloomPass(res, 0.42, 0.38, 0.5);   // strength, radius, threshold (only bright cores glow, no wash)
     comp.addPass(pass);
   }
   function remove() {
