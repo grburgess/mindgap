@@ -355,7 +355,7 @@ const glowCtx = { getClusters: () => state.clusters, getSettings: () => state.se
 
 function renderGraph() {
   if (graph && mountedMode === state.mode) {
-    graph.graphData(viewData());
+    applyData(viewData());
     return;
   }
   if (window.Glow3d) Glow3d.teardown();
@@ -403,7 +403,6 @@ function renderGraph() {
     .onBackgroundClick(closeSidebar)
     .graphData(viewData());
   applyForces(graph);
-  if (state.mode === '2d' && graph.autoPauseRedraw) graph.autoPauseRedraw(false); // keep painting after cooldown
   if (state.mode === '2d') {
     graph.onRenderFramePre(drawHulls);
     graph.onRenderFramePost(drawClusterLabels);
@@ -411,9 +410,30 @@ function renderGraph() {
   }
   if (state.mode === '3d' && window.Glow3d) Glow3d.install(graph, glowCtx);
   if (state.mode === '3d' && window.Starfield) Starfield.install(graph, glowCtx);
-  graph.onEngineStop(() => { if (state._needFit) { graph.zoomToFit(500, 60); state._needFit = false; } });
+  graph.onEngineStop(() => {
+    if (state._needFit) { graph.zoomToFit(500, 60); state._needFit = false; }
+    // auto-pause is on (force-graph default): when the engine cools the render loop stops
+    // painting, so nudge exactly one repaint at the settled layout — re-runs the 2D custom
+    // painters (hulls, cluster + hub labels) at final positions, then the canvas idles at ~0 CPU.
+    if (state.mode === '2d') requestAnimationFrame(() => refreshStyles());
+  });
   state._needFit = true;
   mountedMode = state.mode;
+}
+
+// swap in new graph data while PRESERVING existing nodes' layout positions by id. viewData()
+// returns fresh clones with no x/y, and force-graph re-spirals any node whose .x is unset and
+// reheats to alpha=1 on every graphData swap — so without this, adding one edge (or filtering/
+// focusing) cold-relayouts the whole graph and nodes fly apart for seconds. Carrying positions
+// over means only genuinely-new nodes spiral in; the reheat then settles instantly (net force ~0).
+function applyData(d) {
+  if (!graph) return;
+  const prev = new Map(graph.graphData().nodes.map((n) => [n.id, n]));
+  for (const n of d.nodes) {
+    const p = prev.get(n.id);
+    if (p) { n.x = p.x; n.y = p.y; n.vx = p.vx; n.vy = p.vy; if (p.z != null) n.z = p.z; }
+  }
+  graph.graphData(d);
 }
 
 let lastClick = { id: null, t: 0 };
@@ -431,20 +451,20 @@ function handleNodeClick(n) {
 function setFocus(id) {
   state.focusRoots = new Set([id]);
   $('#focus-reset').classList.remove('hidden');
-  graph.graphData(viewData());
+  applyData(viewData());
 }
 
 // add a root: its 1-hop ring joins the local graph (org-roam spreading)
 function spreadFocus(id) {
   if (state.focusRoots.has(id)) return;
   state.focusRoots.add(id);
-  graph.graphData(viewData());
+  applyData(viewData());
 }
 
 function clearFocus() {
   state.focusRoots = new Set();
   $('#focus-reset').classList.add('hidden');
-  if (graph) graph.graphData(viewData());
+  applyData(viewData());
 }
 
 function refreshStyles() {
@@ -768,7 +788,7 @@ let timelineMounted = false;
 function onCutoff(T, dir) {
   state.timeline.cutoff = T;
   if (dir) state.timeline.dir = dir;
-  if (graph) graph.graphData(viewData());
+  applyData(viewData());
 }
 function showTimeline(on) {
   $('#timeline-strip').classList.toggle('hidden', !on);
@@ -780,7 +800,7 @@ function showTimeline(on) {
   } else {
     // hidden ⇒ no time filtering
     state.timeline.cutoff = null;
-    if (graph) graph.graphData(viewData());
+    applyData(viewData());
   }
 }
 $('#timeline-toggle').onclick = () => showTimeline($('#timeline-strip').classList.contains('hidden'));
@@ -805,7 +825,7 @@ function updateOrphanChip() {
 $('#orphan-chip').onclick = () => {
   state.orphansOnly = !state.orphansOnly;
   updateOrphanChip();
-  if (graph) graph.graphData(viewData());
+  applyData(viewData());
 };
 
 /* ---------- quick switcher (Cmd/Ctrl-O) ---------- */
