@@ -344,7 +344,7 @@ function applyForces(g) {
   // octree dep chain is fragile via CDN); 3D declutter relies on charge+link+depth.
   const d3f = window.__d3f;
   g.d3Force('collide', !is3d && s.collide && d3f && d3f.forceCollide
-    ? d3f.forceCollide((n) => Math.sqrt(nodeVal(n)) * g.nodeRelSize() + 4).iterations(2)
+    ? d3f.forceCollide((n) => Math.sqrt(nodeVal(n)) * g.nodeRelSize() + 4).iterations(1)
     : null);
   // topic-cluster cohesion (2D + 3D): groups same-community nodes so topics separate
   g.d3Force('cluster', s.clusterForce && state.clusters ? makeClusterForce(0.45) : null);
@@ -367,6 +367,11 @@ function renderGraph() {
     .width(graphEl.clientWidth)
     .height(graphEl.clientHeight)
     .backgroundColor(themeBg())
+    // stop the layout once it has converged (alpha ≤ 0.02, ~tick 170) instead of running
+    // force-graph's default 15000ms wall-clock: past convergence every extra frame is a wasted
+    // full O(N+E) repaint. cooldownTime(15000) still backstops slow machines; this is sticky on
+    // the instance, so applyData/d3ReheatSimulation/drag reheats all inherit the early stop.
+    .d3AlphaMin(0.02)
     .nodeColor((n) => {
       const C = state.clusters, byC = state.settings.colorBy === 'community' && C;
       // timeline color override: when on, replace the base hue (recency/provenance);
