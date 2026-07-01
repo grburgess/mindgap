@@ -21,9 +21,12 @@
   let raf = 0, frame = 0;
   let photons = null, photonPhase = null;   // edge-flow: ONE Points cloud, a flowing point per edge
   const PHOTON_SPEED = 0.006;               // fraction of an edge advanced per frame
-  let onMove = null, onClick = null;
+  let onMove = null, onClick = null, onDownH = null, onUpH = null;
   let raycaster = null, ndc = null, dummy = null;
   let lastHover = -1, moveT = 0;
+  // node-drag (the lib's drag is dead on empty node objects, so we do it on the InstancedMesh):
+  let ctrls = null, down = null, dragging = false, justDragged = false;
+  let dragPlane = null, _v3a = null, _v3b = null;
   const HUB_R = 1;                          // bloom-sphere base radius; scaled per-node in the loop
 
   function THREE() { return window.THREE || null; }
@@ -191,39 +194,86 @@
   function startLoop() { if (!raf && inst) loop(); }
   function stopLoop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
 
-  // D. HOVER + CLICK — raycast the InstancedMesh (the lib's hit-testing is dead on empty objects).
-  function nodeAt(ev) {
-    if (!inst) return null;
-    const T = THREE(), dom = graph.renderer().domElement, r = dom.getBoundingClientRect();
+  // D. HOVER + CLICK + DRAG — the lib's hit-testing AND node-drag are dead on empty node objects, so we
+  // raycast the InstancedMesh ourselves. Drag moves the node on a camera-facing plane, pins it (fx/fy/fz),
+  // disables orbit-controls for the gesture, and suppresses the trailing click.
+  function setNDC(ev) {
+    const dom = graph.renderer().domElement, r = dom.getBoundingClientRect();
     ndc.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
     ndc.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
+  }
+  function nodeAt(ev) {
+    if (!inst) return null;
+    setNDC(ev);
     raycaster.setFromCamera(ndc, graph.camera());
     const hits = raycaster.intersectObject(inst, false);
     if (!hits.length || hits[0].instanceId == null) return null;
     return ctx.nodes()[hits[0].instanceId] || null;
   }
+  function startDrag(n) {
+    graph.camera().getWorldDirection(_v3a);                        // plane normal = view direction
+    dragPlane.setFromNormalAndCoplanarPoint(_v3a, _v3b.set(n.x, n.y, n.z || 0));
+    n.fx = n.x; n.fy = n.y; n.fz = (n.z || 0);                     // pin at grab
+  }
+  function dragTo(ev) {
+    setNDC(ev);
+    raycaster.setFromCamera(ndc, graph.camera());
+    if (raycaster.ray.intersectPlane(dragPlane, _v3a)) {           // move node to cursor on the drag plane
+      const n = down.node;
+      n.fx = n.x = _v3a.x; n.fy = n.y = _v3a.y; n.fz = n.z = _v3a.z;
+      if (graph.d3ReheatSimulation) graph.d3ReheatSimulation();    // neighbours follow
+    }
+  }
+  function handleDown(ev) {
+    if (ev.button != null && ev.button !== 0) return;              // left button only
+    const n = nodeAt(ev);
+    if (!n) return;                                                // empty space → let orbit-controls handle it
+    down = { node: n, x: ev.clientX, y: ev.clientY };
+    if (ctrls) ctrls.enabled = false;                             // hold orbit while a node is pressed
+    try { graph.renderer().domElement.setPointerCapture(ev.pointerId); } catch (e) {}
+  }
   function handleMove(ev) {
+    if (down) {                                                    // pressing a node: maybe drag, never hover
+      if (!dragging && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 3) { dragging = true; startDrag(down.node); }
+      if (dragging) dragTo(ev);
+      return;
+    }
     const now = performance.now();
-    if (now - moveT < 40) return;           // throttle ~40ms
+    if (now - moveT < 40) return;                                  // throttle hover ~40ms
     moveT = now;
     const n = nodeAt(ev), idx = n ? ctx.nodes().indexOf(n) : -1;
     if (idx !== lastHover) { lastHover = idx; ctx.onHover(n || null); }
   }
-  function handleClick(ev) { const n = nodeAt(ev); if (n) ctx.onClick(n); }
+  function handleUp(ev) {
+    if (!down) return;
+    if (ctrls) ctrls.enabled = true;
+    try { graph.renderer().domElement.releasePointerCapture(ev.pointerId); } catch (e) {}
+    if (dragging) justDragged = true;                              // dropped node stays pinned; swallow the click
+    down = null; dragging = false;
+  }
+  function handleClick(ev) {
+    if (justDragged) { justDragged = false; return; }              // ignore the click that ends a drag
+    const n = nodeAt(ev); if (n) ctx.onClick(n);
+  }
 
   function bindEvents() {
     const dom = graph.renderer().domElement;
-    onMove = handleMove; onClick = handleClick;
+    onMove = handleMove; onClick = handleClick; onDownH = handleDown; onUpH = handleUp;
+    dom.addEventListener('pointerdown', onDownH);
     dom.addEventListener('pointermove', onMove);
+    dom.addEventListener('pointerup', onUpH);
     dom.addEventListener('click', onClick);
   }
   function unbindEvents() {
-    if (graph && (onMove || onClick)) {
+    if (graph && (onMove || onClick || onDownH || onUpH)) {
       const dom = graph.renderer().domElement;
+      if (onDownH) dom.removeEventListener('pointerdown', onDownH);
       if (onMove) dom.removeEventListener('pointermove', onMove);
+      if (onUpH) dom.removeEventListener('pointerup', onUpH);
       if (onClick) dom.removeEventListener('click', onClick);
     }
-    onMove = null; onClick = null;
+    onMove = null; onClick = null; onDownH = null; onUpH = null;
+    down = null; dragging = false;
   }
 
   // F. syncColors — recompute ALL instance + line vertex colors (no positions; the loop owns those).
@@ -243,7 +293,10 @@
     const T = THREE();
     if (!T) { if (!warned) { console.warn('[Instanced3d] window.THREE unavailable — 3D instancing disabled'); warned = true; } return; }
     raycaster = new T.Raycaster(); ndc = new T.Vector2(); dummy = new T.Object3D();
-    lastHover = -1; frame = 0;
+    dragPlane = new T.Plane(); _v3a = new T.Vector3(); _v3b = new T.Vector3();
+    lastHover = -1; frame = 0; down = null; dragging = false; justDragged = false;
+    if (graph.enableNodeDrag) graph.enableNodeDrag(false);   // the lib's node-drag is dead on empty objects — we do it ourselves
+    ctrls = graph.controls ? graph.controls() : null;        // orbit-controls: disabled during a node drag
     build();
     bindEvents();
     startLoop();
@@ -252,6 +305,7 @@
     stopLoop();
     unbindEvents();
     clear();
+    if (ctrls) { ctrls.enabled = true; ctrls = null; }       // never leave orbit disabled
     graph = null; ctx = null; raycaster = null; ndc = null; dummy = null;
   }
   // rebuild the instanced geometry from CURRENT graph data — MUST be called after graphData() changes
