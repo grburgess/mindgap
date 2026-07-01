@@ -29,7 +29,7 @@
   let raycaster = null, ndc = null, dummy = null;
   let lastHover = -1, moveT = 0;
   // node-drag (the lib's drag is dead on empty node objects, so we do it on the InstancedMesh):
-  let ctrls = null, down = null, dragging = false, justDragged = false;
+  let ctrls = null, down = null, dragging = false, justDragged = false, dragNbrs = null, dragPrev = null;
   let dragPlane = null, _v3a = null, _v3b = null;
   const HUB_R = 1;                          // bloom-sphere base radius; scaled per-node in the loop
 
@@ -252,17 +252,25 @@
     graph.camera().getWorldDirection(_v3a);                        // plane normal = view direction
     dragPlane.setFromNormalAndCoplanarPoint(_v3a, _v3b.set(n.x, n.y, n.z || 0));
     n.fx = n.x; n.fy = n.y; n.fz = (n.z || 0);                     // pin at grab
+    // collect 1-hop neighbours so the drag pulls connected nodes along (src/tgt are node objects post-bind)
+    const nb = new Set();
+    for (const l of ctx.links()) { const s = l.source, t = l.target; if (s === n && t && typeof t === 'object') nb.add(t); else if (t === n && s && typeof s === 'object') nb.add(s); }
+    dragNbrs = [...nb];
+    dragPrev = { x: n.x, y: n.y, z: n.z || 0 };
   }
   function dragTo(ev) {
     setNDC(ev);
     raycaster.setFromCamera(ndc, graph.camera());
     if (raycaster.ray.intersectPlane(dragPlane, _v3a)) {           // move node to cursor on the drag plane
       const n = down.node;
-      // set position directly (the sync loop moves the instance + its edges); pin so it stays.
-      // NO d3ReheatSimulation here — reheating alpha=1 every pointermove restarts the whole 5000-node
-      // layout continuously, churning the entire graph ("ghost nodes on move") and making orbit feel
-      // stuck. Edges follow via writeLinePositions; the dragged node just moves cleanly + pins.
-      n.fx = n.x = _v3a.x; n.fy = n.y = _v3a.y; n.fz = n.z = _v3a.z;
+      const dx = _v3a.x - dragPrev.x, dy = _v3a.y - dragPrev.y, dz = _v3a.z - dragPrev.z;
+      n.fx = n.x = _v3a.x; n.fy = n.y = _v3a.y; n.fz = n.z = _v3a.z;   // move the dragged node + pin
+      // pull 1-hop neighbours along at stiffness K<1 so they trail elastically (edges flex) — this is
+      // KINEMATIC, NOT d3ReheatSimulation: alpha=1 every frame churned the whole graph (the old "ghost
+      // nodes on move"), and the sim exposes no gentle alphaTarget, so we move the neighbours directly.
+      const K = 0.6;
+      if (dragNbrs) for (const m of dragNbrs) { if (m.x == null) continue; m.x += dx * K; m.y += dy * K; m.z = (m.z || 0) + dz * K; }
+      dragPrev.x = _v3a.x; dragPrev.y = _v3a.y; dragPrev.z = _v3a.z;
     }
   }
   function handleDown(ev) {
@@ -298,7 +306,7 @@
     if (ctrls) ctrls.enabled = true;
     try { graph.renderer().domElement.releasePointerCapture(ev.pointerId); } catch (e) {}
     if (dragging) justDragged = true;                              // dropped node stays pinned; swallow the click
-    down = null; dragging = false;
+    down = null; dragging = false; dragNbrs = null; dragPrev = null;
   }
   function handleClick(ev) {
     if (justDragged) { justDragged = false; return; }              // ignore the click that ends a drag
