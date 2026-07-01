@@ -1,0 +1,259 @@
+/* mindgap 3D draw-call collapse — the 3d-force-graph default renders each node as its own
+   Mesh and each link as its own Line (~27.7k draw calls on 5k nodes / 10k edges → ~1.5 FPS). This
+   module replaces that with ONE InstancedMesh (all node spheres) + ONE LineSegments (all edges) →
+   ~100 draw calls. app.js sets .nodeThreeObject(()=>empty Object3D).linkVisibility(false) so the lib
+   still runs the sim (binding link.source/target to node objects, positioning nodes) but paints
+   nothing; we read those positions each frame and rewrite the instance matrices + line endpoints.
+
+   The lib's built-in hover/click is dead (nodes are empty objects), so we raycast the InstancedMesh
+   ourselves. Bloom (bloom.js) hides every object whose userData.bloom !== true during its offscreen
+   pass; the big InstancedMesh stays untagged (no glow, else the whole cloud haze-bombs), and hubs get
+   a small MeshBasicMaterial sphere with userData.bloom=true layered on top so only they glow.
+
+   ctx (from app.js): { nodes(), links(), nodeColorFor(n), linkColorFor(l), nodeVal(n), hubIds()→Set,
+   onHover(node|null), onClick(node) }. THREE from window.THREE (ESM shim in index.html). 3D-only. */
+'use strict';
+(function () {
+  let graph = null, ctx = null, warned = false;
+  let inst = null, lines = null;          // the one node mesh + the one edge geometry
+  let hubMeshes = [];                      // small per-hub bloom spheres (≤~28), synced in the loop
+  let hubMap = [];                         // parallel: hubMeshes[i] tracks node hubMap[i]
+  let raf = 0, frame = 0;
+  let photons = null, photonPhase = null;   // edge-flow: ONE Points cloud, a flowing point per edge
+  const PHOTON_SPEED = 0.006;               // fraction of an edge advanced per frame
+  let onMove = null, onClick = null;
+  let raycaster = null, ndc = null, dummy = null;
+  let lastHover = -1, moveT = 0;
+  const HUB_R = 1;                          // bloom-sphere base radius; scaled per-node in the loop
+
+  function THREE() { return window.THREE || null; }
+
+  // node sphere radius from nodeVal (a volume-ish degree number): cbrt so hubs read bigger without
+  // dwarfing the field. tuned to roughly match the lib's default val→radius feel.
+  function radiusOf(n) { return Math.cbrt(Math.max(ctx.nodeVal(n), 0.01)) * 4; }
+
+  // THREE.Color rejects rgba() (the alpha); strip to the rgb triple. hex/named pass straight through.
+  const _col = { r: 0, g: 0, b: 0 };
+  function parseColor(css) {
+    const T = THREE();
+    const s = String(css);
+    if (s.indexOf('rgba') === 0 || (s.indexOf('rgb') === 0)) {
+      const m = s.match(/[\d.]+/g);
+      if (m && m.length >= 3) return new T.Color(+m[0] / 255, +m[1] / 255, +m[2] / 255);
+    }
+    return new T.Color(s);
+  }
+
+  function hasPos(n) { return n && n.x != null && Number.isFinite(n.x); }
+
+  function build() {
+    const T = THREE(); if (!T || !graph) return;
+    clear();
+    const nodes = ctx.nodes(), links = ctx.links();
+
+    // A. NODES → one InstancedMesh. Lambert (scene has Ambient+Directional). Per-instance color via
+    // setColorAt — three's USE_INSTANCING_COLOR path applies instanceColor automatically. Do NOT set
+    // vertexColors:true: that makes the shader read a (missing) geometry color attribute → all black.
+    const geo = new T.SphereGeometry(1, 8, 6);
+    const mat = new T.MeshLambertMaterial({});
+    inst = new T.InstancedMesh(geo, mat, nodes.length || 1);
+    inst.frustumCulled = false;             // we manage the bounding sphere on the shared geometry
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (hasPos(n)) { dummy.position.set(n.x, n.y, n.z || 0); dummy.scale.setScalar(radiusOf(n)); }
+      else { dummy.position.set(0, 0, 0); dummy.scale.setScalar(0); }   // hidden until positioned
+      dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix);
+      inst.setColorAt(i, parseColor(ctx.nodeColorFor(n)));
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    inst.computeBoundingSphere();           // InstancedMesh sphere spans all instances — REQUIRED for hover raycast
+    graph.scene().add(inst);
+
+    // B. EDGES → one LineSegments. 2 endpoints/link, 3 floats each; vertexColors matches.
+    const lgeo = new T.BufferGeometry();
+    const lpos = new Float32Array(links.length * 2 * 3);
+    const lcol = new Float32Array(links.length * 2 * 3);
+    lgeo.setAttribute('position', new T.BufferAttribute(lpos, 3));
+    lgeo.setAttribute('color', new T.BufferAttribute(lcol, 3));
+    const lmat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5 });
+    lines = new T.LineSegments(lgeo, lmat);
+    lines.frustumCulled = false;
+    graph.scene().add(lines);
+    writeLinePositions();
+    writeLineColors();
+
+    // C2. EDGE-FLOW PHOTONS → one THREE.Points, one flowing point per edge (10k points = 1 draw call).
+    // Restores the "energy along links" FX that linkVisibility(false) removed, at ~0 cost. Additive
+    // green; positions = lerp(src,tgt,phase) advanced each frame in the loop.
+    const pcount = links.length;
+    photonPhase = new Float32Array(pcount);
+    for (let i = 0; i < pcount; i++) photonPhase[i] = (i * 0.147) % 1;   // spread starts, no RNG needed
+    const pgeo = new T.BufferGeometry();
+    pgeo.setAttribute('position', new T.BufferAttribute(new Float32Array(pcount * 3), 3));
+    const pmat = new T.PointsMaterial({ color: 0x57c7a4, size: 2.4, sizeAttenuation: true,
+      transparent: true, opacity: 0.9, blending: T.AdditiveBlending, depthWrite: false });
+    photons = new T.Points(pgeo, pmat);
+    photons.frustumCulled = false;
+    graph.scene().add(photons);
+
+    // E. HUB BLOOM: small individual spheres for the hub nodes so only they glow (the big instanced
+    // mesh stays untagged). Positions synced in the loop; colors are static (hub hue on build).
+    buildHubs();
+  }
+
+  function buildHubs() {
+    const T = THREE();
+    hubMeshes = []; hubMap = [];
+    const set = ctx.hubIds() || new Set();
+    if (!set.size) return;
+    const hgeo = new T.SphereGeometry(1, 8, 6);   // shared geometry across hub spheres
+    for (const n of ctx.nodes()) {
+      if (!set.has(n.id)) continue;
+      const m = new T.Mesh(hgeo, new T.MeshBasicMaterial({ color: parseColor(ctx.nodeColorFor(n)) }));
+      m.userData.bloom = true;                     // bloom.js: only tagged objects glow
+      m.frustumCulled = false; m.visible = hasPos(n);
+      graph.scene().add(m);
+      hubMeshes.push(m); hubMap.push(n);
+    }
+  }
+
+  // rewrite every line endpoint from current node positions. src/tgt are node OBJECTS post-bind;
+  // pre-bind they may still be string ids — skip those (leave 0,0,0 until the sim binds them).
+  function writeLinePositions() {
+    if (!lines) return;
+    const links = ctx.links(), p = lines.geometry.attributes.position.array;
+    for (let i = 0; i < links.length; i++) {
+      const l = links[i], s = l.source, t = l.target, o = i * 6;
+      if (s && typeof s === 'object' && t && typeof t === 'object' && hasPos(s) && hasPos(t)) {
+        p[o] = s.x; p[o + 1] = s.y; p[o + 2] = s.z || 0;
+        p[o + 3] = t.x; p[o + 4] = t.y; p[o + 5] = t.z || 0;
+      } else { p[o] = p[o + 1] = p[o + 2] = p[o + 3] = p[o + 4] = p[o + 5] = 0; }
+    }
+    lines.geometry.attributes.position.needsUpdate = true;
+  }
+  function writeLineColors() {
+    if (!lines) return;
+    const links = ctx.links(), c = lines.geometry.attributes.color.array;
+    for (let i = 0; i < links.length; i++) {
+      const col = parseColor(ctx.linkColorFor(links[i])), o = i * 6;
+      c[o] = c[o + 3] = col.r; c[o + 1] = c[o + 4] = col.g; c[o + 2] = c[o + 5] = col.b;
+    }
+    lines.geometry.attributes.color.needsUpdate = true;
+  }
+
+  function clear() {
+    const rm = (o) => { if (graph && o) { graph.scene().remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); } };
+    rm(inst); rm(lines); rm(photons);
+    for (const m of hubMeshes) rm(m);
+    inst = null; lines = null; photons = null; photonPhase = null; hubMeshes = []; hubMap = [];
+  }
+
+  // C. POSITION SYNC — each frame copy node x/y/z into instance matrices + line endpoints. This is
+  // O(N+E) float writes, cheap vs draw calls; NO recolor here. Bounding sphere recomputed every ~30
+  // frames (for the still-frustum-culled line/instance culling), not per frame.
+  function loop() {
+    if (!inst) { raf = 0; return; }
+    raf = requestAnimationFrame(loop);
+    if (document.hidden) return;
+    const nodes = ctx.nodes();
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (hasPos(n)) { dummy.position.set(n.x, n.y, n.z || 0); dummy.scale.setScalar(radiusOf(n)); }
+      else { dummy.scale.setScalar(0); }
+      dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    writeLinePositions();
+    if (photons) {                          // advance + reposition edge-flow points along their edges
+      const links = ctx.links(), pp = photons.geometry.attributes.position.array;
+      for (let i = 0; i < links.length; i++) {
+        const l = links[i], s = l.source, t = l.target, o = i * 3;
+        if (s && typeof s === 'object' && t && typeof t === 'object' && hasPos(s) && hasPos(t)) {
+          let ph = photonPhase[i] + PHOTON_SPEED; if (ph >= 1) ph -= 1; photonPhase[i] = ph;
+          pp[o] = s.x + (t.x - s.x) * ph;
+          pp[o + 1] = s.y + (t.y - s.y) * ph;
+          pp[o + 2] = (s.z || 0) + ((t.z || 0) - (s.z || 0)) * ph;
+        } else { pp[o] = pp[o + 1] = pp[o + 2] = 0; }
+      }
+      photons.geometry.attributes.position.needsUpdate = true;
+    }
+    for (let i = 0; i < hubMeshes.length; i++) {
+      const n = hubMap[i], m = hubMeshes[i];
+      if (hasPos(n)) { m.visible = true; m.position.set(n.x, n.y, n.z || 0); m.scale.setScalar(radiusOf(n) * (HUB_R * 1.05)); }
+      else m.visible = false;
+    }
+    if ((frame++ % 30) === 0) {
+      inst.computeBoundingSphere();          // InstancedMesh (not geometry) sphere — hover raycast hit-test uses this
+      lines.geometry.computeBoundingSphere();
+    }
+  }
+  function startLoop() { if (!raf && inst) loop(); }
+  function stopLoop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+
+  // D. HOVER + CLICK — raycast the InstancedMesh (the lib's hit-testing is dead on empty objects).
+  function nodeAt(ev) {
+    if (!inst) return null;
+    const T = THREE(), dom = graph.renderer().domElement, r = dom.getBoundingClientRect();
+    ndc.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
+    ndc.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
+    raycaster.setFromCamera(ndc, graph.camera());
+    const hits = raycaster.intersectObject(inst, false);
+    if (!hits.length || hits[0].instanceId == null) return null;
+    return ctx.nodes()[hits[0].instanceId] || null;
+  }
+  function handleMove(ev) {
+    const now = performance.now();
+    if (now - moveT < 40) return;           // throttle ~40ms
+    moveT = now;
+    const n = nodeAt(ev), idx = n ? ctx.nodes().indexOf(n) : -1;
+    if (idx !== lastHover) { lastHover = idx; ctx.onHover(n || null); }
+  }
+  function handleClick(ev) { const n = nodeAt(ev); if (n) ctx.onClick(n); }
+
+  function bindEvents() {
+    const dom = graph.renderer().domElement;
+    onMove = handleMove; onClick = handleClick;
+    dom.addEventListener('pointermove', onMove);
+    dom.addEventListener('click', onClick);
+  }
+  function unbindEvents() {
+    if (graph && (onMove || onClick)) {
+      const dom = graph.renderer().domElement;
+      if (onMove) dom.removeEventListener('pointermove', onMove);
+      if (onClick) dom.removeEventListener('click', onClick);
+    }
+    onMove = null; onClick = null;
+  }
+
+  // F. syncColors — recompute ALL instance + line vertex colors (no positions; the loop owns those).
+  // Called by app.js when the highlight changes so hover dimming/greening works. Hub bloom spheres
+  // keep their build-time hue (they only ever hold hub nodes; not part of the dimming contrast).
+  function syncColors() {
+    if (!inst || !ctx) return;
+    const nodes = ctx.nodes();
+    for (let i = 0; i < nodes.length; i++) inst.setColorAt(i, parseColor(ctx.nodeColorFor(nodes[i])));
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    writeLineColors();
+  }
+
+  function install(g, context) {
+    teardown();
+    graph = g; ctx = context;
+    const T = THREE();
+    if (!T) { if (!warned) { console.warn('[Instanced3d] window.THREE unavailable — 3D instancing disabled'); warned = true; } return; }
+    raycaster = new T.Raycaster(); ndc = new T.Vector2(); dummy = new T.Object3D();
+    lastHover = -1; frame = 0;
+    build();
+    bindEvents();
+    startLoop();
+  }
+  function teardown() {
+    stopLoop();
+    unbindEvents();
+    clear();
+    graph = null; ctx = null; raycaster = null; ndc = null; dummy = null;
+  }
+
+  window.Instanced3d = { install, teardown, syncColors };
+})();

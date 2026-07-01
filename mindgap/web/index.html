@@ -15,7 +15,8 @@
   import { EffectComposer } from 'https://esm.sh/three@0.179/examples/jsm/postprocessing/EffectComposer.js';
   import { RenderPass } from 'https://esm.sh/three@0.179/examples/jsm/postprocessing/RenderPass.js';
   import { UnrealBloomPass } from 'https://esm.sh/three@0.179/examples/jsm/postprocessing/UnrealBloomPass.js';
-  window.__bloomAddons = { EffectComposer, RenderPass, UnrealBloomPass };
+  import { ShaderPass } from 'https://esm.sh/three@0.179/examples/jsm/postprocessing/ShaderPass.js';
+  window.__bloomAddons = { EffectComposer, RenderPass, UnrealBloomPass, ShaderPass };
 </script>
 <script src="https://unpkg.com/marked/lib/marked.umd.js"></script>
 <link rel="icon" href="data:,">
@@ -29,6 +30,7 @@
 <script src="/bloom.js"></script>
 <script src="/warp.js"></script>
 <script src="/spacefx.js"></script>
+<script src="/instanced3d.js"></script>
 </head>
 <body>
 <header id="header">

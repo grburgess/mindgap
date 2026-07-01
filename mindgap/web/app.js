@@ -106,6 +106,10 @@ const state = {
 };
 let graph = null;
 let mountedMode = null;
+let panTimer = null;                    // 2D link-LOD: hide edges while panning, restore ~300ms after
+// perf instrumentation: expose the live graph instance + state to injected harnesses
+// (tools/perf/fps_harness.js). getter is required — `graph` is reassigned on 2D↔3D remount.
+window.__mm = { get graph() { return graph; }, state };
 
 const $ = (sel) => document.querySelector(sel);
 const graphEl = $('#graph');
@@ -367,10 +371,43 @@ function applyEdgeFlow(g) {
   if (!g || !g.linkDirectionalParticles) return;
   const hlId = () => { const hl = state.hoverHl || state.hl; return hl ? hl.id : null; };
   const inc = (l) => { const s = l.source.id ?? l.source, t = l.target.id ?? l.target; const h = hlId(); return h && (s === h || t === h); };
-  g.linkDirectionalParticles((l) => state.settings.edgeFlow ? (inc(l) ? 4 : 2) : 0)
+  // 2D: photons ONLY on hovered/incident links. Ambient photons on all 10k links pin force-graph's
+  // doRedraw=true forever (canvas never idles) AND add 10k per-frame particle draws — the 2D perf
+  // killer. Hover flow keeps edge-flow visibly "on". (3D flow is handled by instanced3d's Points cloud;
+  // the lib's links are invisible there so this accessor is moot in 3D.)
+  g.linkDirectionalParticles((l) => state.settings.edgeFlow ? (inc(l) ? 4 : 0) : 0)
    .linkDirectionalParticleSpeed((l) => inc(l) ? 0.012 : 0.006)
    .linkDirectionalParticleWidth((l) => inc(l) ? 2.2 : 1.4)
    .linkDirectionalParticleColor((l) => inc(l) ? 'rgba(87,199,164,0.9)' : 'rgba(150,170,160,0.45)');
+}
+
+// node/link color logic, extracted so the 3D InstancedMesh (instanced3d.js) can call the SAME
+// logic per node/link as the 2D/lib accessors below. No behavior change — .nodeColor/.linkColor
+// just reference these named fns now.
+function nodeColorFor(n) {
+  const C = state.clusters, byC = state.settings.colorBy === 'community' && C;
+  // timeline color override: when on, replace the base hue (recency/provenance);
+  // when off ('off' default) the community/type base is untouched. While a cluster is
+  // isolated the override is skipped for its members so the bright-vs-dim contrast holds.
+  const inActiveCluster = state.activeCluster != null && C && C.byId.get(n.id) === state.activeCluster;
+  const base = state.timeline.colorMode !== 'off' && !inActiveCluster
+    ? timelineNodeColor(n)
+    : (byC
+        ? (C.byId.has(n.id) ? C.communities[C.byId.get(n.id)].color : '#5b6663')
+        : (TYPE_COLORS[n.type] || '#8b9692'));
+  if (state.activeCluster != null && (!C || C.byId.get(n.id) !== state.activeCluster))
+    return 'rgba(91,102,99,0.18)';
+  const hl = state.hoverHl || state.hl;
+  if (!hl) return base;
+  return n.id === hl.id || hl.nbs.has(n.id) ? base : 'rgba(91,102,99,0.25)';
+}
+function linkColorFor(l) {
+  const o = state.settings.linkOpacity;
+  const hl = state.hoverHl || state.hl;
+  if (!hl) return `rgba(140,160,152,${o})`;
+  const s = l.source.id ?? l.source, t = l.target.id ?? l.target;
+  return s === hl.id || t === hl.id
+    ? 'rgba(87,199,164,0.75)' : `rgba(140,160,152,${o * 0.33})`;
 }
 
 function renderGraph() {
@@ -384,9 +421,11 @@ function renderGraph() {
   if (window.Bloom) Bloom.teardown();
   if (window.Warp) Warp.teardown();
   if (window.SpaceFx) SpaceFx.teardown();
+  if (window.Instanced3d) Instanced3d.teardown();
   if (graph && graph._destructor) graph._destructor();
   graphEl.innerHTML = '';
   const make = state.mode === '3d' ? ForceGraph3D : ForceGraph;
+  const is3d = state.mode === '3d';
   graph = make()(graphEl)
     .width(graphEl.clientWidth)
     .height(graphEl.clientHeight)
@@ -396,36 +435,21 @@ function renderGraph() {
     // full O(N+E) repaint. cooldownTime(15000) still backstops slow machines; this is sticky on
     // the instance, so applyData/d3ReheatSimulation/drag reheats all inherit the early stop.
     .d3AlphaMin(0.02)
-    .nodeColor((n) => {
-      const C = state.clusters, byC = state.settings.colorBy === 'community' && C;
-      // timeline color override: when on, replace the base hue (recency/provenance);
-      // when off ('off' default) the community/type base is untouched. While a cluster is
-      // isolated the override is skipped for its members so the bright-vs-dim contrast holds.
-      const inActiveCluster = state.activeCluster != null && C && C.byId.get(n.id) === state.activeCluster;
-      const base = state.timeline.colorMode !== 'off' && !inActiveCluster
-        ? timelineNodeColor(n)
-        : (byC
-            ? (C.byId.has(n.id) ? C.communities[C.byId.get(n.id)].color : '#5b6663')
-            : (TYPE_COLORS[n.type] || '#8b9692'));
-      if (state.activeCluster != null && (!C || C.byId.get(n.id) !== state.activeCluster))
-        return 'rgba(91,102,99,0.18)';
-      const hl = state.hoverHl || state.hl;
-      if (!hl) return base;
-      return n.id === hl.id || hl.nbs.has(n.id) ? base : 'rgba(91,102,99,0.25)';
-    })
+    .nodeColor(nodeColorFor)
     .nodeVal(nodeVal)
     .nodeLabel(nodeTooltip)
     .linkLabel((l) => l.rel)
-    .linkColor((l) => {
-      const o = state.settings.linkOpacity;
-      const hl = state.hoverHl || state.hl;
-      if (!hl) return `rgba(140,160,152,${o})`;
+    .linkColor(linkColorFor)
+    .linkWidth((l) => is3d ? 0 : Math.min(l.weight || 1, 3))   // 3D: unlit lines, not cylinder meshes (~10k fewer)
+    .linkVisibility(() => !(state.mode === '2d' && state._panning && state._panLOD))   // 2D LOD: drop edge strokes mid-pan on DENSE graphs only, restore on settle (3D overrides this to false via instanced3d)
+    .linkDirectionalArrowLength((l) => {
+      if (!state.settings.arrows) return 0;
+      if (!is3d) return 3.5;
+      // 3D: arrows only on hub-incident links — a persistent direction cue on the meaningful edges,
+      // without a cone mesh on every one of ~10k faint links.
       const s = l.source.id ?? l.source, t = l.target.id ?? l.target;
-      return s === hl.id || t === hl.id
-        ? 'rgba(87,199,164,0.75)' : `rgba(140,160,152,${o * 0.33})`;
+      return (state.hubs && (state.hubs.has(s) || state.hubs.has(t))) ? 3.5 : 0;
     })
-    .linkWidth((l) => Math.min(l.weight || 1, 3))
-    .linkDirectionalArrowLength((l) => state.settings.arrows ? 3.5 : 0)
     .linkDirectionalArrowRelPos(1)
     .onNodeClick(handleNodeClick)
     .onNodeHover(handleNodeHover)
@@ -437,6 +461,8 @@ function renderGraph() {
     graph.onRenderFramePre(drawHulls);
     graph.onRenderFramePost(drawClusterLabels);
     graph.nodeCanvasObjectMode(() => 'after').nodeCanvasObject(drawLabel2d);
+    graph.onZoom(onPan2d);                       // link-LOD: hide edges while the view is moving
+    state._panLOD = graph.graphData().links.length > 1500;   // only LOD dense graphs; small ones keep edges mid-pan
   }
   if (state.mode === '3d' && window.Glow3d) Glow3d.install(graph, glowCtx);
   if (state.mode === '3d' && window.Starfield) Starfield.install(graph, glowCtx);
@@ -444,6 +470,26 @@ function renderGraph() {
   if (state.mode === '3d' && window.Bloom) Bloom.install(graph, glowCtx);
   if (state.mode === '3d' && window.Warp) Warp.install(graph, glowCtx);
   if (state.mode === '3d' && window.SpaceFx) SpaceFx.install(graph, glowCtx);
+  if (is3d) {                                   // perf: cheaper node spheres + clamp retina fill (bloom/stars are fill-bound)
+    graph.nodeResolution(6);
+    const _r = graph.renderer && graph.renderer();
+    if (_r && _r.setPixelRatio) _r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  }
+  // 3D draw-call collapse: mute the lib's per-node/per-link THREE objects (it still runs the sim +
+  // binds link.source/target to node objects) and render everything through instanced3d.js — ONE
+  // InstancedMesh + ONE LineSegments instead of ~27.7k meshes. Hover/click are raycast there; the
+  // lib's onNodeHover/onNodeClick above stay wired for 2D and as a harmless no-op in 3D.
+  if (is3d && window.Instanced3d) {
+    graph.nodeThreeObject(() => new THREE.Object3D()).nodeThreeObjectExtend(false).linkVisibility(false);
+    Instanced3d.install(graph, {
+      nodes: () => graph.graphData().nodes,
+      links: () => graph.graphData().links,
+      nodeColorFor, linkColorFor, nodeVal,
+      hubIds: () => state.hubs || new Set(),
+      onHover: handleNodeHover,
+      onClick: handleNodeClick,
+    });
+  }
   graph.onEngineStop(() => {
     if (state._needFit) { graph.zoomToFit(500, 60); state._needFit = false; }
     // auto-pause is on (force-graph default): when the engine cools the render loop stops
@@ -507,6 +553,9 @@ function refreshStyles() {
   ['nodeColor', 'linkColor', 'linkDirectionalArrowLength', 'nodeCanvasObject', 'nodeThreeObject'].forEach((m) => {
     if (graph[m]) { const cur = graph[m](); if (cur) graph[m](cur); }
   });
+  // 3D: the lib accessors above paint nothing (nodes are empty objects); push the recomputed
+  // highlight colors into the InstancedMesh + edge LineSegments instead.
+  if (state.mode === '3d' && window.Instanced3d) Instanced3d.syncColors();
 }
 
 function hlFor(id) {
@@ -527,6 +576,16 @@ function setHover(id) {
 
 function handleNodeHover(n) {
   setHover(n ? n.id : null);
+}
+
+// 2D link-LOD: force-graph's onZoom fires on every pan/zoom frame. While the view is moving, edges
+// (10k canvas strokes) are an unreadable blur — hide them (linkVisibility reads state._panning) so a
+// pan stays smooth; ~300ms after the last move, restore them and nudge one redraw.
+function onPan2d() {
+  if (state.mode !== '2d') return;
+  state._panning = true;
+  clearTimeout(panTimer);
+  panTimer = setTimeout(() => { state._panning = false; if (graph) refreshStyles(); }, 300);
 }
 
 function centerOn(id, attempt = 0) {
