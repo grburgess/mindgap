@@ -254,6 +254,11 @@
     clear();
     graph = null; ctx = null; raycaster = null; ndc = null; dummy = null;
   }
+  // rebuild the instanced geometry from CURRENT graph data — MUST be called after graphData() changes
+  // (filter / search / focus / timeline). The InstancedMesh count + node→instance mapping are fixed at
+  // build time; without a rebuild, filtered-out nodes linger as ghosts and colors/hover desync.
+  // build() clears the old meshes first; the running rAF loop is synchronous-safe and picks up the new refs.
+  function rebuild() { if (graph && ctx) build(); }
 
-  window.Instanced3d = { install, teardown, syncColors };
+  window.Instanced3d = { install, teardown, syncColors, rebuild };
 })();

@@ -514,6 +514,13 @@ function applyData(d) {
     if (p) { n.x = p.x; n.y = p.y; n.vx = p.vx; n.vy = p.vy; if (p.z != null) n.z = p.z; }
   }
   graph.graphData(d);
+  // 3D renders through instanced3d.js (fixed instance count); rebuild it from the new data or
+  // filtered-out nodes linger as ghosts. Bloom's hub set changes too — refresh so its idle-gate
+  // re-renders instead of showing a stale glow.
+  if (state.mode === '3d') {
+    if (window.Instanced3d) Instanced3d.rebuild();
+    if (window.Bloom) Bloom.refresh();
+  }
 }
 
 let lastClick = { id: null, t: 0 };
