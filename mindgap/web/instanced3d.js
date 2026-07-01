@@ -73,13 +73,15 @@
     inst.computeBoundingSphere();           // InstancedMesh sphere spans all instances — REQUIRED for hover raycast
     graph.scene().add(inst);
 
-    // B. EDGES → one LineSegments. 2 endpoints/link, 3 floats each; vertexColors matches.
+    // B. EDGES → one LineSegments. 2 endpoints/link. Color is RGBA (itemSize 4) so per-edge alpha
+    // works — three enables USE_COLOR_ALPHA for 4-component vertex colors, letting linkColorFor's
+    // rgba() (which bakes in state.settings.linkOpacity + the highlight alphas) drive edge opacity.
     const lgeo = new T.BufferGeometry();
     const lpos = new Float32Array(links.length * 2 * 3);
-    const lcol = new Float32Array(links.length * 2 * 3);
+    const lcol = new Float32Array(links.length * 2 * 4);
     lgeo.setAttribute('position', new T.BufferAttribute(lpos, 3));
-    lgeo.setAttribute('color', new T.BufferAttribute(lcol, 3));
-    const lmat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5 });
+    lgeo.setAttribute('color', new T.BufferAttribute(lcol, 4));
+    const lmat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
     lines = new T.LineSegments(lgeo, lmat);
     lines.frustumCulled = false;
     graph.scene().add(lines);
@@ -139,8 +141,11 @@
     if (!lines) return;
     const links = ctx.links(), c = lines.geometry.attributes.color.array;
     for (let i = 0; i < links.length; i++) {
-      const col = parseColor(ctx.linkColorFor(links[i])), o = i * 6;
-      c[o] = c[o + 3] = col.r; c[o + 1] = c[o + 4] = col.g; c[o + 2] = c[o + 5] = col.b;
+      const css = String(ctx.linkColorFor(links[i]));            // rgba() with per-edge alpha (opacity/highlight)
+      const col = parseColor(css);
+      let a = 1; if (css.indexOf('rgba') === 0) { const m = css.match(/[\d.]+/g); if (m && m.length >= 4) a = +m[3]; }
+      const o = i * 8;                                            // 2 verts × RGBA(4)
+      c[o] = c[o + 4] = col.r; c[o + 1] = c[o + 5] = col.g; c[o + 2] = c[o + 6] = col.b; c[o + 3] = c[o + 7] = a;
     }
     lines.geometry.attributes.color.needsUpdate = true;
   }
