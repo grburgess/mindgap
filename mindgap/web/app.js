@@ -1151,6 +1151,11 @@ $('#settings-toggle').onclick = () => {
   else $('#settings').classList.add('hidden');
 };
 
+const toggleHelp = () => $('#help').classList.toggle('hidden');
+$('#help-toggle').onclick = toggleHelp;
+$('#help-close').onclick = () => $('#help').classList.add('hidden');
+$('#help').onclick = (e) => { if (e.target === $('#help')) $('#help').classList.add('hidden'); };  // click backdrop to close
+
 function inField(el) {
   return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
 }
@@ -1161,10 +1166,17 @@ document.addEventListener('keydown', (e) => {
     qsOpen();
     return;
   }
+  // '?' toggles the shortcuts cheat sheet (not while typing in a field)
+  if (e.key === '?' && !inField(e.target)) {
+    e.preventDefault();
+    toggleHelp();
+    return;
+  }
   // Escape cascade for overlays — but not while typing in a header field, so the
   // input's own Escape (native clear / switcher's own handler) isn't stolen
   if (e.key === 'Escape' && !inField(e.target)) {
-    if (!$('#switcher').classList.contains('hidden')) qsClose();
+    if (!$('#help').classList.contains('hidden')) $('#help').classList.add('hidden');
+    else if (!$('#switcher').classList.contains('hidden')) qsClose();
     else if (!$('#settings').classList.contains('hidden')) $('#settings').classList.add('hidden');
     else if (state.focusRoots.size) clearFocus();
     else closeSidebar();

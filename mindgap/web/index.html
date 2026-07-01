@@ -46,6 +46,7 @@
     <button id="focus-reset" class="ghost hidden" title="reset focus (Esc)">&#9678; unfocus</button>
     <button id="timeline-toggle" class="ghost" title="timeline">&#9202; timeline</button>
     <button id="settings-toggle" class="ghost" title="settings">&#9881; settings</button>
+    <button id="help-toggle" class="ghost" title="keyboard shortcuts (?)">&#9000; keys</button>
   </div>
   <div class="row">
     <div id="type-chips"></div>
@@ -76,6 +77,37 @@
   <div class="sw-box">
     <input id="sw-input" type="text" placeholder="jump to node…" autocomplete="off" spellcheck="false">
     <ul id="sw-results"></ul>
+  </div>
+</div>
+
+<div id="help" class="hidden">
+  <div class="help-box">
+    <button class="close" id="help-close" title="close (Esc)">&times;</button>
+    <h2>shortcuts</h2>
+    <div class="help-cols">
+      <div>
+        <h3>keyboard</h3>
+        <dl class="keys">
+          <dt><kbd>?</kbd></dt><dd>toggle this panel</dd>
+          <dt><kbd>&#8984;</kbd>/<kbd>Ctrl</kbd> <kbd>O</kbd></dt><dd>quick switcher — jump to a node</dd>
+          <dt><kbd>Esc</kbd></dt><dd>close panel · exit search · clear focus · close details</dd>
+          <dt><kbd>&#8593;</kbd> <kbd>&#8595;</kbd></dt><dd>switcher: move selection</dd>
+          <dt><kbd>&#8629;</kbd> Enter</dt><dd>switcher: open selected node</dd>
+        </dl>
+      </div>
+      <div>
+        <h3>mouse &amp; trackpad</h3>
+        <dl class="keys">
+          <dt>click node</dt><dd>open its details</dd>
+          <dt>hover node</dt><dd>highlight its links + show label</dd>
+          <dt>scroll</dt><dd>zoom in / out</dd>
+          <dt>drag background</dt><dd>2D: pan &nbsp;·&nbsp; 3D: orbit</dd>
+          <dt>drag node</dt><dd>move it — pulls linked nodes along</dd>
+          <dt><kbd>Shift</kbd> drag</dt><dd>3D: orbit even over a node</dd>
+          <dt>right-drag</dt><dd>3D: pan</dd>
+        </dl>
+      </div>
+    </div>
   </div>
 </div>
 
