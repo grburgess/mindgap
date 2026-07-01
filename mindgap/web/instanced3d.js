@@ -11,7 +11,8 @@
    a small MeshBasicMaterial sphere with userData.bloom=true layered on top so only they glow.
 
    ctx (from app.js): { nodes(), links(), nodeColorFor(n), linkColorFor(l), nodeVal(n), hubIds()→Set,
-   onHover(node|null), onClick(node) }. THREE from window.THREE (ESM shim in index.html). 3D-only. */
+   onHover(node|null), onClick(node), nodeLabel(n)→tooltip HTML, getSettings()→state.settings }.
+   THREE from window.THREE (ESM shim in index.html). 3D-only. */
 'use strict';
 (function () {
   let graph = null, ctx = null, warned = false;
@@ -21,6 +22,9 @@
   let raf = 0, frame = 0;
   let photons = null, photonPhase = null;   // edge-flow: ONE Points cloud, a flowing point per edge
   const PHOTON_SPEED = 0.006;               // fraction of an edge advanced per frame
+  let arrows = null;                         // direction cones: ONE InstancedMesh, one cone per link
+  let _up = null, _dir = null, _q = null;    // orientation scratch (init in install with THREE)
+  let tip = null;                            // hover tooltip div (created on install, removed on teardown)
   let onMove = null, onClick = null, onDownH = null, onUpH = null;
   let raycaster = null, ndc = null, dummy = null;
   let lastHover = -1, moveT = 0;
@@ -102,6 +106,15 @@
     photons.frustumCulled = false;
     graph.scene().add(photons);
 
+    // D0. DIRECTION ARROWS → one InstancedMesh of cones (one per link), gated by the arrows setting.
+    // The lib's linkDirectionalArrowLength is dead under linkVisibility(false); we reimplement it. Fixed
+    // grey (no per-instance color) keeps it simple; cone apex points +Y by default, oriented in loop().
+    arrows = new T.InstancedMesh(new T.ConeGeometry(1.6, 4.5, 6),
+      new T.MeshBasicMaterial({ vertexColors: false, color: 0x8ca098, transparent: true, opacity: 0.85 }),
+      links.length || 1);
+    arrows.userData.arrows = true; arrows.frustumCulled = false;
+    graph.scene().add(arrows);
+
     // E. HUB BLOOM: small individual spheres for the hub nodes so only they glow (the big instanced
     // mesh stays untagged). Positions synced in the loop; colors are static (hub hue on build).
     buildHubs();
@@ -152,9 +165,9 @@
 
   function clear() {
     const rm = (o) => { if (graph && o) { graph.scene().remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); } };
-    rm(inst); rm(lines); rm(photons);
+    rm(inst); rm(lines); rm(photons); rm(arrows);
     for (const m of hubMeshes) rm(m);
-    inst = null; lines = null; photons = null; photonPhase = null; hubMeshes = []; hubMap = [];
+    inst = null; lines = null; photons = null; photonPhase = null; arrows = null; hubMeshes = []; hubMap = [];
   }
 
   // C. POSITION SYNC — each frame copy node x/y/z into instance matrices + line endpoints. This is
@@ -186,6 +199,25 @@
       }
       photons.geometry.attributes.position.needsUpdate = true;
     }
+    if (arrows) {                           // orient + place a cone at the target end of each bound link
+      arrows.visible = !!(ctx.getSettings && ctx.getSettings().arrows);
+      if (arrows.visible) {
+        const links = ctx.links();
+        for (let i = 0; i < links.length; i++) {
+          const l = links[i], s = l.source, t = l.target;
+          if (s && typeof s === 'object' && t && typeof t === 'object' && hasPos(s) && hasPos(t)) {
+            _dir.set(t.x - s.x, t.y - s.y, (t.z || 0) - (s.z || 0));
+            if (_dir.length() > 1) _dir.normalize(); else { dummy.scale.setScalar(0); dummy.updateMatrix(); arrows.setMatrixAt(i, dummy.matrix); continue; }
+            _q.setFromUnitVectors(_up, _dir);            // cone +Y apex → link direction
+            const back = radiusOf(t) + 3;                // sit the cone just short of the target sphere
+            dummy.position.set(t.x - _dir.x * back, t.y - _dir.y * back, (t.z || 0) - _dir.z * back);
+            dummy.quaternion.copy(_q); dummy.scale.setScalar(1);
+          } else { dummy.position.set(0, 0, 0); dummy.quaternion.copy(_q); dummy.scale.setScalar(0); }
+          dummy.updateMatrix(); arrows.setMatrixAt(i, dummy.matrix);
+        }
+        arrows.instanceMatrix.needsUpdate = true;
+      }
+    }
     for (let i = 0; i < hubMeshes.length; i++) {
       const n = hubMap[i], m = hubMeshes[i];
       if (hasPos(n)) { m.visible = true; m.position.set(n.x, n.y, n.z || 0); m.scale.setScalar(radiusOf(n) * (HUB_R * 1.05)); }
@@ -194,6 +226,7 @@
     if ((frame++ % 30) === 0) {
       inst.computeBoundingSphere();          // InstancedMesh (not geometry) sphere — hover raycast hit-test uses this
       lines.geometry.computeBoundingSphere();
+      if (arrows) arrows.computeBoundingSphere();
     }
   }
   function startLoop() { if (!raf && inst) loop(); }
@@ -233,6 +266,7 @@
     }
   }
   function handleDown(ev) {
+    if (ev.shiftKey) return;                                       // Shift+press falls through to orbit-controls, even over a node
     if (ev.button != null && ev.button !== 0) return;              // left button only
     const n = nodeAt(ev);
     if (!n) return;                                                // empty space → let orbit-controls handle it
@@ -243,7 +277,7 @@
   function handleMove(ev) {
     if (down) {                                                    // pressing a node: maybe drag, never hover
       if (!dragging && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 3) { dragging = true; startDrag(down.node); }
-      if (dragging) dragTo(ev);
+      if (dragging) { dragTo(ev); if (tip) tip.style.display = 'none'; }   // hide tooltip while dragging
       return;
     }
     const now = performance.now();
@@ -251,6 +285,13 @@
     moveT = now;
     const n = nodeAt(ev), idx = n ? ctx.nodes().indexOf(n) : -1;
     if (idx !== lastHover) { lastHover = idx; ctx.onHover(n || null); }
+    if (tip) {                                                     // follow-cursor tooltip via ctx.nodeLabel
+      if (n && ctx.nodeLabel) {
+        tip.innerHTML = ctx.nodeLabel(n);
+        tip.style.left = (ev.clientX + 14) + 'px'; tip.style.top = (ev.clientY + 14) + 'px';
+        tip.style.display = 'block';
+      } else tip.style.display = 'none';
+    }
   }
   function handleUp(ev) {
     if (!down) return;
@@ -302,6 +343,11 @@
     if (!T) { if (!warned) { console.warn('[Instanced3d] window.THREE unavailable — 3D instancing disabled'); warned = true; } return; }
     raycaster = new T.Raycaster(); ndc = new T.Vector2(); dummy = new T.Object3D();
     dragPlane = new T.Plane(); _v3a = new T.Vector3(); _v3b = new T.Vector3();
+    _up = new T.Vector3(0, 1, 0); _dir = new T.Vector3(); _q = new T.Quaternion();
+    // hover tooltip (the lib's nodeLabel is dead under empty node objects — we drive it via raycast)
+    tip = document.createElement('div'); tip.id = '__mm_tip';
+    tip.style.cssText = 'position:fixed;pointer-events:none;z-index:40;display:none;background:rgba(10,16,14,.92);border:1px solid rgba(120,132,127,.25);color:#d7e0dc;padding:4px 8px;border-radius:6px;font:12px "Hanken Grotesk",sans-serif;max-width:260px';
+    document.body.appendChild(tip);
     lastHover = -1; frame = 0; down = null; dragging = false; justDragged = false;
     if (graph.enableNodeDrag) graph.enableNodeDrag(false);   // the lib's node-drag is dead on empty objects — we do it ourselves
     ctrls = graph.controls ? graph.controls() : null;        // orbit-controls: disabled during a node drag
@@ -313,8 +359,10 @@
     stopLoop();
     unbindEvents();
     clear();
+    if (tip) { tip.remove(); tip = null; }                   // drop the hover tooltip div
     if (ctrls) { ctrls.enabled = true; ctrls = null; }       // never leave orbit disabled
     graph = null; ctx = null; raycaster = null; ndc = null; dummy = null;
+    _up = null; _dir = null; _q = null;
   }
   // rebuild the instanced geometry from CURRENT graph data — MUST be called after graphData() changes
   // (filter / search / focus / timeline). The InstancedMesh count + node→instance mapping are fixed at

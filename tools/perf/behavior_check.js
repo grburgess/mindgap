@@ -15,7 +15,7 @@
   const T = () => window.THREE;
 
   function scene() { return g() && g().scene(); }
-  function instMesh() { let m = null; scene().traverse((o) => { if (o.isInstancedMesh) m = o; }); return m; }
+  function instMesh() { let m = null; scene().traverse((o) => { if (o.isInstancedMesh && !(o.userData && o.userData.arrows)) m = o; }); return m; }  // NODES mesh, not the arrows mesh
   function edgeSeg() { let e = null; scene().traverse((o) => { if (o.isLineSegments && o.geometry.attributes.position.count > 1000) e = o; }); return e; }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -82,16 +82,26 @@
     return { pass: conceptOK && paperOK && sizeOK, conceptColor: concept && colorHexOf(concept), paperColor: paper && colorHexOf(paper), hubScale: scaleOf(hub), leafScale: scaleOf(leaf), note: (conceptOK && paperOK) ? 'type colors ok' : 'type colors WRONG' };
   }
 
-  // C6 — arrows: direction arrows present on links when the arrows setting is on.
+  // C6 — arrows: direction arrows present on links when the arrows setting is on. FORCE the setting on
+  // first (else it false-passes when arrows are off) and require a VISIBLE arrows InstancedMesh w/ count>0.
   async function arrows() {
     const s = st();
-    let cones = 0, arrowInst = 0;
+    const orig = s.settings.arrows;
+    s.settings.arrows = true; await raf();                          // loop() reads the setting for .visible
+    let arrowMesh = null, arrowInst = 0;
     scene().traverse((o) => {
-      if (o.isMesh && o.geometry && /Cone/i.test(o.geometry.type)) cones++;
-      if (o.isInstancedMesh && o.userData && o.userData.arrows) arrowInst += o.count;
+      if (o.isInstancedMesh && o.userData && o.userData.arrows) { arrowMesh = o; arrowInst += o.count; }
     });
-    const present = cones > 0 || arrowInst > 0;
-    return { pass: !!s.arrows ? present : true, arrowsSetting: s.arrows, coneMeshes: cones, arrowInstances: arrowInst, note: present ? 'arrow geometry present' : 'NO arrow geometry in 3D' };
+    const present = !!arrowMesh && arrowInst > 0 && arrowMesh.visible;
+    s.settings.arrows = orig;                                       // restore
+    return { pass: present, arrowInstances: arrowInst, visible: !!arrowMesh && arrowMesh.visible, note: present ? 'visible arrows InstancedMesh present' : 'NO visible arrows InstancedMesh in 3D' };
+  }
+
+  // Tooltip element: the 3D install creates #__mm_tip on document.body. Its existence is the automated
+  // signal; real hover-shows-text is verified by a human/real-mouse driver.
+  async function tooltip() {
+    const el = document.querySelector('#__mm_tip');
+    return { pass: !!el, note: el ? 'tooltip element present' : 'NO #__mm_tip tooltip element' };
   }
 
   // C2 (mechanism) — moving a node updates its incident edge endpoints in the LineSegments buffer.
@@ -115,7 +125,7 @@
 
   async function all() {
     const out = {};
-    for (const k of ['linkOpacity', 'highlight', 'colorSize', 'arrows', 'dragEdges']) {
+    for (const k of ['linkOpacity', 'highlight', 'colorSize', 'arrows', 'tooltip', 'dragEdges']) {
       try { out[k] = await window.__mmBehave[k](); } catch (err) { out[k] = { pass: false, error: String(err) }; }
     }
     out.summary = Object.keys(out).filter((k) => k !== 'summary').map((k) => `${k}:${out[k].pass ? 'PASS' : 'FAIL'}`).join('  ');
@@ -123,6 +133,6 @@
     return out;
   }
 
-  window.__mmBehave = { linkOpacity, highlight, colorSize, arrows, dragEdges, all };
+  window.__mmBehave = { linkOpacity, highlight, colorSize, arrows, tooltip, dragEdges, all };
   return { installed: true, mode: st() && st().mode };
 })();

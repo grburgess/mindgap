@@ -488,6 +488,8 @@ function renderGraph() {
       hubIds: () => state.hubs || new Set(),
       onHover: handleNodeHover,
       onClick: handleNodeClick,
+      nodeLabel: nodeTooltip,
+      getSettings: () => state.settings,
     });
   }
   graph.onEngineStop(() => {
