@@ -225,8 +225,11 @@
     raycaster.setFromCamera(ndc, graph.camera());
     if (raycaster.ray.intersectPlane(dragPlane, _v3a)) {           // move node to cursor on the drag plane
       const n = down.node;
+      // set position directly (the sync loop moves the instance + its edges); pin so it stays.
+      // NO d3ReheatSimulation here — reheating alpha=1 every pointermove restarts the whole 5000-node
+      // layout continuously, churning the entire graph ("ghost nodes on move") and making orbit feel
+      // stuck. Edges follow via writeLinePositions; the dragged node just moves cleanly + pins.
       n.fx = n.x = _v3a.x; n.fy = n.y = _v3a.y; n.fz = n.z = _v3a.z;
-      if (graph.d3ReheatSimulation) graph.d3ReheatSimulation();    // neighbours follow
     }
   }
   function handleDown(ev) {
