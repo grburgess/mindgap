@@ -346,7 +346,31 @@ function makeClusterForce(strength) {
   return force;
 }
 
+// 2D drag freeze — while a node is dragged the lib writes its fx/x directly every move, so the
+// physics reheat it also hard-codes (d3AlphaTarget(.3).resetCountdown()) exists ONLY to drag
+// neighbours along. At 5k nodes one force tick costs 100-400ms (drag ≈ 11 FPS), so we null the
+// forces for the gesture (ticks become ~free), pull 1-hop neighbours kinematically instead
+// (mirror of the 3D instanced3d.js drag), and restore forces once the engine stops. Instance-
+// guarded: a mode remount rebuilds `graph`, and old force objects must never reach the new one.
+let _frozenForces = null;   // { g, forces: {name: force|null} } while frozen
+function freezeForces(g) {
+  if (_frozenForces) return;
+  const forces = {};
+  for (const k of ['charge', 'link', 'center', 'collide', 'cluster']) { forces[k] = g.d3Force(k) || null; g.d3Force(k, null); }
+  // zero residual velocities: absent forces d3 still integrates x += vx each tick, so a drag begun
+  // mid-settle would leave the whole graph coasting for the frozen window
+  for (const n of g.graphData().nodes) { n.vx = 0; n.vy = 0; if (n.vz !== undefined) n.vz = 0; }
+  _frozenForces = { g, forces };
+}
+function unfreezeForces(g) {
+  if (!_frozenForces) return;
+  if (_frozenForces.g === g) {
+    for (const k of Object.keys(_frozenForces.forces)) if (_frozenForces.forces[k]) g.d3Force(k, _frozenForces.forces[k]);
+  }
+  _frozenForces = null;     // different instance → originals belong to a dead graph, just drop them
+}
 function applyForces(g) {
+  unfreezeForces(g);        // reconfiguring frozen (null) forces would throw; any settings/data change unfreezes first
   const s = state.settings, is3d = state.mode === '3d';
   g.d3Force('charge').strength(s.charge);
   g.d3Force('link').distance(s.linkDist).strength(s.linkStrength);
@@ -463,6 +487,31 @@ function renderGraph() {
     graph.nodeCanvasObjectMode(() => 'after').nodeCanvasObject(drawLabel2d);
     graph.onZoom(onPan2d);                       // link-LOD: hide edges while the view is moving
     state._panLOD = graph.graphData().links.length > 1500;   // only LOD dense graphs; small ones keep edges mid-pan
+    // kinematic node drag (see freezeForces): freeze physics on the first real move, pull 1-hop
+    // neighbours along at K<1 so edges flex; the force-free alpha tail then stops the engine,
+    // whose handler below unfreezes. delta = the lib's per-move translation in graph coords.
+    // Neighbour capture keys on the dragged node (NOT the freeze flag): consecutive drags land
+    // inside the previous drag's ~2s alpha tail, where forces are still frozen but the new
+    // gesture still needs its own neighbour set.
+    let dragNbrs = null, dragNode = null;
+    graph.onNodeDrag((n, delta) => {
+      if (!_frozenForces) freezeForces(graph);
+      if (dragNode !== n) {
+        dragNode = n;
+        const nb = new Set();
+        for (const l of graph.graphData().links) {
+          const s = l.source, t = l.target;
+          if (s === n && t && typeof t === 'object') nb.add(t);
+          else if (t === n && s && typeof s === 'object') nb.add(s);
+        }
+        nb.delete(n);                        // self-loop would double-move the dragged node
+        dragNbrs = [...nb];
+      }
+      const K = 0.6;
+      if (dragNbrs) for (const m of dragNbrs) { if (m.x == null) continue; m.x += delta.x * K; m.y += delta.y * K; }
+      onPan2d();                             // dense-graph LOD: hide 10k edge strokes while dragging (same as pan) — full-stroke rasters cause 400ms+ compositor stalls
+    });
+    graph.onNodeDragEnd(() => { dragNbrs = null; dragNode = null; });
   }
   if (state.mode === '3d' && window.Glow3d) Glow3d.install(graph, glowCtx);
   if (state.mode === '3d' && window.Starfield) Starfield.install(graph, glowCtx);
@@ -493,6 +542,7 @@ function renderGraph() {
     });
   }
   graph.onEngineStop(() => {
+    unfreezeForces(graph);   // end of a 2D drag's force-free alpha tail → give physics back
     if (state._needFit) { graph.zoomToFit(500, 60); state._needFit = false; }
     // auto-pause is on (force-graph default): when the engine cools the render loop stops
     // painting, so nudge exactly one repaint at the settled layout — re-runs the 2D custom
@@ -510,6 +560,7 @@ function renderGraph() {
 // over means only genuinely-new nodes spiral in; the reheat then settles instantly (net force ~0).
 function applyData(d) {
   if (!graph) return;
+  unfreezeForces(graph);   // data swaps rely on live forces to settle new nodes; a frozen drag window must not starve them
   const prev = new Map(graph.graphData().nodes.map((n) => [n.id, n]));
   for (const n of d.nodes) {
     const p = prev.get(n.id);

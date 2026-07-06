@@ -170,22 +170,40 @@
     inst = null; lines = null; photons = null; photonPhase = null; arrows = null; hubMeshes = []; hubMap = [];
   }
 
-  // C. POSITION SYNC — each frame copy node x/y/z into instance matrices + line endpoints. This is
-  // O(N+E) float writes, cheap vs draw calls; NO recolor here. Bounding sphere recomputed every ~30
-  // frames (for the still-frustum-culled line/instance culling), not per frame.
+  // C. POSITION SYNC — copy node x/y/z into instance matrices + line endpoints ONLY on frames where
+  // some node actually moved (physics ticking, drag). A float checksum over all node coords is the
+  // dirty signal — O(N) adds, ~free vs the 10k quaternion/matrix writes + GPU uploads it gates. Photons
+  // are the exception: they animate along static edges, so they update every frame. Bounding spheres
+  // recompute once per ~30 frames and only while dirty.
+  let lastPosSum = NaN, arrowsStale = true, needSphere = true;
+  function posChecksum(nodes) {
+    // component weights break the Δx = -Δz cancellation of an axis-diagonal drag; the running
+    // ×1.0000001 makes the sum order/index-sensitive so centroid-preserving redistribution
+    // (center-force layouts) can't hold it constant either
+    let s = 0;
+    for (let i = 0; i < nodes.length; i++) { const n = nodes[i]; s = s * 1.0000001 + (n.x || 0) + 1.31 * (n.y || 0) + 1.77 * (n.z || 0); }
+    return s;
+  }
+  function markDirty() { lastPosSum = NaN; }   // rebuild/syncColors/data swaps force a full resync
   function loop() {
     if (!inst) { raf = 0; return; }
     raf = requestAnimationFrame(loop);
     if (document.hidden) return;
     const nodes = ctx.nodes();
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      if (hasPos(n)) { dummy.position.set(n.x, n.y, n.z || 0); dummy.scale.setScalar(radiusOf(n)); }
-      else { dummy.scale.setScalar(0); }
-      dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix);
+    const posSum = posChecksum(nodes);
+    const dirty = !(posSum === lastPosSum);   // NaN sum (pre-layout) stays dirty every frame
+    lastPosSum = posSum;
+    if (dirty) {
+      needSphere = true;
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        if (hasPos(n)) { dummy.position.set(n.x, n.y, n.z || 0); dummy.scale.setScalar(radiusOf(n)); }
+        else { dummy.scale.setScalar(0); }
+        dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      writeLinePositions();
     }
-    inst.instanceMatrix.needsUpdate = true;
-    writeLinePositions();
     if (photons) {                          // advance + reposition edge-flow points along their edges
       const links = ctx.links(), pp = photons.geometry.attributes.position.array;
       for (let i = 0; i < links.length; i++) {
@@ -201,7 +219,9 @@
     }
     if (arrows) {                           // orient + place a cone at the target end of each bound link
       arrows.visible = !!(ctx.getSettings && ctx.getSettings().arrows);
-      if (arrows.visible) {
+      if (!arrows.visible && dirty) arrowsStale = true;  // moved while hidden → recompute on next show
+      if (arrows.visible && (dirty || arrowsStale)) {
+        arrowsStale = false;
         const links = ctx.links();
         for (let i = 0; i < links.length; i++) {
           const l = links[i], s = l.source, t = l.target;
@@ -218,12 +238,15 @@
         arrows.instanceMatrix.needsUpdate = true;
       }
     }
-    for (let i = 0; i < hubMeshes.length; i++) {
-      const n = hubMap[i], m = hubMeshes[i];
-      if (hasPos(n)) { m.visible = true; m.position.set(n.x, n.y, n.z || 0); m.scale.setScalar(radiusOf(n) * (HUB_R * 1.05)); }
-      else m.visible = false;
+    if (dirty) {
+      for (let i = 0; i < hubMeshes.length; i++) {
+        const n = hubMap[i], m = hubMeshes[i];
+        if (hasPos(n)) { m.visible = true; m.position.set(n.x, n.y, n.z || 0); m.scale.setScalar(radiusOf(n) * (HUB_R * 1.05)); }
+        else m.visible = false;
+      }
     }
-    if ((frame++ % 30) === 0) {
+    if ((frame++ % 30) === 0 && needSphere) {
+      needSphere = false;                    // recompute once per dirty burst (and once after it ends)
       inst.computeBoundingSphere();          // InstancedMesh (not geometry) sphere — hover raycast hit-test uses this
       lines.geometry.computeBoundingSphere();
       if (arrows) arrows.computeBoundingSphere();
@@ -376,7 +399,7 @@
   // (filter / search / focus / timeline). The InstancedMesh count + node→instance mapping are fixed at
   // build time; without a rebuild, filtered-out nodes linger as ghosts and colors/hover desync.
   // build() clears the old meshes first; the running rAF loop is synchronous-safe and picks up the new refs.
-  function rebuild() { if (graph && ctx) build(); }
+  function rebuild() { if (graph && ctx) { build(); markDirty(); arrowsStale = true; } }
 
   window.Instanced3d = { install, teardown, syncColors, rebuild };
 })();
