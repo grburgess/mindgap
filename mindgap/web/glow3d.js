@@ -90,6 +90,26 @@
     }
   }
 
+  // ---- position-dirty rAF sync ----
+  // Orbs used to reposition on graph.onEngineTick only, but kinematic node drags
+  // (instanced3d / the 2D frozen-forces drag) move nodes WITHOUT ticking the engine, so the
+  // nebula hung behind as a ghost until the next tick/refresh. Mirror instanced3d's dirty
+  // pattern instead: a cheap O(N) position checksum each frame gates the real tick() work.
+  let posRaf = 0, lastPosSum = NaN;
+  function posChecksum() {
+    const ns = graph.graphData().nodes;
+    let s = 0;
+    for (let i = 0; i < ns.length; i++) { const n = ns[i]; s = s * 1.0000001 + (n.x || 0) + 1.31 * (n.y || 0) + 1.77 * (n.z || 0); }
+    return s;
+  }
+  function posLoop() {
+    if (!graph) { posRaf = 0; return; }
+    posRaf = requestAnimationFrame(posLoop);
+    if (document.hidden || !orbs.length) return;
+    const s = posChecksum();
+    if (s !== lastPosSum) { lastPosSum = s; tick(); }
+  }
+
   // ---- per-tick update ----
   function tick() {
     if (!graph || !ctx || !orbs.length) { centroids = []; return; }
@@ -184,20 +204,21 @@
     const T = THREE();
     if (!T) { if (!warned) { console.warn('[Glow3d] window.THREE unavailable — 3D topic glow disabled'); warned = true; } return; }
     buildOrbs();
-    graph.onEngineTick(tick);
     onMove = onPointerMove;
     graph.renderer().domElement.addEventListener('pointermove', onMove);
     tick();                                    // initial placement attempt
+    lastPosSum = NaN;                          // force first posLoop pass to re-tick
+    if (!posRaf) posLoop();                    // dirty-gated sync (covers engine ticks AND kinematic drags)
   }
   function teardown() {
     if (graph && onMove) { try { graph.renderer().domElement.removeEventListener('pointermove', onMove); } catch (e) {} }
     onMove = null; if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (posRaf) { cancelAnimationFrame(posRaf); posRaf = 0; }
     if (graph) {
       clearOrbs();
       if (label) { graph.scene().remove(label); if (label.material.map) label.material.map.dispose(); label.material.dispose(); label = null; }
     }
-    // The graph instance is destroyed by app.js _destructor() right after teardown(), so the
-    // registered onEngineTick handler dies with it; tick() also guards on orbs.length.
+    // posLoop is cancelled above (and self-exits on graph=null); tick() guards on orbs.length.
     graph = null; ctx = null;
   }
   function refresh() {

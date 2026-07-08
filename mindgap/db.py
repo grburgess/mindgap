@@ -50,13 +50,22 @@ def slugify(text):
 def _decode(row):
     d = dict(row)
     d["tags"] = json.loads(d["tags"])
-    d["urls"] = json.loads(d["urls"])
+    d["urls"] = _norm_urls(json.loads(d["urls"]))
     return d
 
 
 def _norm_urls(urls):
-    # tolerate bare-string entries: {"urls": ["https://x"]} -> dict form
-    return [{"label": u, "url": u, "kind": "web"} if isinstance(u, str) else u for u in urls]
+    # tolerate bare-string entries ({"urls": ["https://x"]}) and dict entries
+    # missing label/url/kind, so renderers can assume all three keys are present.
+    out = []
+    for u in urls:
+        if isinstance(u, str):
+            out.append({"label": u, "url": u, "kind": "web"})
+        elif isinstance(u, dict):
+            url = u.get("url") or u.get("label") or ""
+            out.append({**u, "label": u.get("label") or url, "url": url, "kind": u.get("kind", "web")})
+        # else: drop malformed non-str/non-dict entries
+    return out
 
 
 def _ensure_stub(conn, node_id, title=None):

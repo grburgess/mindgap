@@ -29,7 +29,7 @@
   let raycaster = null, ndc = null, dummy = null;
   let lastHover = -1, moveT = 0;
   // node-drag (the lib's drag is dead on empty node objects, so we do it on the InstancedMesh):
-  let ctrls = null, down = null, dragging = false, justDragged = false, dragNbrs = null, dragPrev = null;
+  let ctrls = null, down = null, dragging = false, justDragged = false, dragNbrs = null, dragPrev = null, liveGesture = false, dragReheatT = 0, dragDecay = 0.0228;
   let dragPlane = null, _v3a = null, _v3b = null;
   const HUB_R = 1;                          // bloom-sphere base radius; scaled per-node in the loop
 
@@ -272,13 +272,30 @@
     return ctx.nodes()[hits[0].instanceId] || null;
   }
   function startDrag(n) {
+    liveGesture = !ctx.liveDrag || ctx.liveDrag();
+    if (liveGesture) {
+      // org-roam-ui-style drag: sim runs live for the gesture so forces pull the neighbourhood
+      // along and the drop lands in a new equilibrium (no snap-back). The 3D lib's own drag is
+      // dead (muted node objects) and it exposes no d3AlphaTarget to hold heat, so we reheat at
+      // grab with a LOWERED alphaDecay (alpha coasts near 1 instead of sawtoothing — a visible
+      // whole-graph pulse) and top up every ~2s from dragTo (NOT every frame — the old ghost
+      // churn). alphaMin 0 un-bricks the settled engine (alpha sits below the 0.02 early-stop).
+      graph.d3AlphaMin(0);
+      dragDecay = graph.d3AlphaDecay();
+      graph.d3AlphaDecay(0.005);
+      graph.d3ReheatSimulation();
+      dragReheatT = performance.now();
+      dragNbrs = null;                                             // live forces move neighbours; ripple would double-move them
+    } else {
+      // kinematic fallback for huge graphs (force ticks are 100-400ms): null forces so a hot
+      // post-drop sim can't fight the gesture, and pull the multi-hop ripple set (ctx.dragRipple
+      // from app.js: weight 0.6^hop, ≤3 hops, ≤500 nodes) along instead
+      if (ctx.freezeForces) ctx.freezeForces();
+      dragNbrs = ctx.dragRipple(n, ctx.links());
+    }
     graph.camera().getWorldDirection(_v3a);                        // plane normal = view direction
     dragPlane.setFromNormalAndCoplanarPoint(_v3a, _v3b.set(n.x, n.y, n.z || 0));
     n.fx = n.x; n.fy = n.y; n.fz = (n.z || 0);                     // pin at grab
-    // collect 1-hop neighbours so the drag pulls connected nodes along (src/tgt are node objects post-bind)
-    const nb = new Set();
-    for (const l of ctx.links()) { const s = l.source, t = l.target; if (s === n && t && typeof t === 'object') nb.add(t); else if (t === n && s && typeof s === 'object') nb.add(s); }
-    dragNbrs = [...nb];
     dragPrev = { x: n.x, y: n.y, z: n.z || 0 };
   }
   function dragTo(ev) {
@@ -286,17 +303,21 @@
     raycaster.setFromCamera(ndc, graph.camera());
     if (raycaster.ray.intersectPlane(dragPlane, _v3a)) {           // move node to cursor on the drag plane
       const n = down.node;
+      if (liveGesture && performance.now() - dragReheatT > 2000) {  // keep the gesture's sim hot (alpha fully decays in ~3.5s)
+        graph.d3ReheatSimulation();
+        dragReheatT = performance.now();
+      }
       const dx = _v3a.x - dragPrev.x, dy = _v3a.y - dragPrev.y, dz = _v3a.z - dragPrev.z;
       n.fx = n.x = _v3a.x; n.fy = n.y = _v3a.y; n.fz = n.z = _v3a.z;   // move the dragged node + pin
-      // pull 1-hop neighbours along at stiffness K<1 so they trail elastically (edges flex) — this is
-      // KINEMATIC, NOT d3ReheatSimulation: alpha=1 every frame churned the whole graph (the old "ghost
-      // nodes on move"), and the sim exposes no gentle alphaTarget, so we move the neighbours directly.
-      const K = 0.6;
-      if (dragNbrs) for (const m of dragNbrs) { if (m.x == null) continue; m.x += dx * K; m.y += dy * K; m.z = (m.z || 0) + dz * K; }
+      // pull the ripple set along at per-hop stiffness so it trails elastically (edges flex) — this
+      // is KINEMATIC, NOT d3ReheatSimulation: alpha=1 every frame churned the whole graph (the old
+      // "ghost nodes on move"), and the sim exposes no gentle alphaTarget, so we move nodes directly.
+      if (dragNbrs) for (const [m, kw] of dragNbrs) { if (m.x == null) continue; m.x += dx * kw; m.y += dy * kw; m.z = (m.z || 0) + dz * kw; }
       dragPrev.x = _v3a.x; dragPrev.y = _v3a.y; dragPrev.z = _v3a.z;
     }
   }
   function handleDown(ev) {
+    if (down) return;                                              // second pointer mid-gesture must not steal down.node (drop would unpin the wrong node)
     if (ev.shiftKey) return;                                       // Shift+press falls through to orbit-controls, even over a node
     if (ev.button != null && ev.button !== 0) return;              // left button only
     const n = nodeAt(ev);
@@ -328,7 +349,17 @@
     if (!down) return;
     if (ctrls) ctrls.enabled = true;
     try { graph.renderer().domElement.releasePointerCapture(ev.pointerId); } catch (e) {}
-    if (dragging) justDragged = true;                              // dropped node stays pinned; swallow the click
+    if (dragging) {
+      justDragged = true;                                          // swallow the click that ends a drag
+      // unpin so physics settles the drop (gravity tether, links, charge) — leaving the node
+      // pinned with the engine cold made every drag stick permanently and killed gravity
+      const n = down.node; n.fx = n.fy = n.fz = undefined;
+      if (liveGesture) {
+        graph.d3AlphaMin(0.02);                                    // restore the early-stop floor
+        graph.d3AlphaDecay(dragDecay);                             // ...and the normal cooling rate
+      } else if (ctx.unfreezeForces) ctx.unfreezeForces();         // restore forces BEFORE the reheat ticks
+      graph.d3ReheatSimulation();                                  // settle the drop (tail runs to the early-stop)
+    }
     down = null; dragging = false; dragNbrs = null; dragPrev = null;
   }
   function handleClick(ev) {
@@ -342,6 +373,10 @@
     dom.addEventListener('pointerdown', onDownH);
     dom.addEventListener('pointermove', onMove);
     dom.addEventListener('pointerup', onUpH);
+    // a lost release (pen cancel, screen lock, failed pointer capture) must still end the
+    // gesture — the down-guard in handleDown otherwise wedges ALL node interaction until remount
+    dom.addEventListener('pointercancel', onUpH);
+    dom.addEventListener('lostpointercapture', onUpH);
     dom.addEventListener('click', onClick);
   }
   function unbindEvents() {
@@ -349,7 +384,7 @@
       const dom = graph.renderer().domElement;
       if (onDownH) dom.removeEventListener('pointerdown', onDownH);
       if (onMove) dom.removeEventListener('pointermove', onMove);
-      if (onUpH) dom.removeEventListener('pointerup', onUpH);
+      if (onUpH) { dom.removeEventListener('pointerup', onUpH); dom.removeEventListener('pointercancel', onUpH); dom.removeEventListener('lostpointercapture', onUpH); }
       if (onClick) dom.removeEventListener('click', onClick);
     }
     onMove = null; onClick = null; onDownH = null; onUpH = null;

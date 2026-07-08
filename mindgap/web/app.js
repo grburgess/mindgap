@@ -20,7 +20,7 @@ const TYPE_COLORS = {
 };
 
 const SETTINGS_DEFAULTS = Object.freeze({
-  charge: -260, linkDist: 55, linkStrength: 0.3, velocityDecay: 0.32, collide: true, // physics
+  charge: -260, linkDist: 55, linkStrength: 0.3, velocityDecay: 0.32, collide: true, gravity: 0.1, // physics
   labelMode: 'hubs', linkOpacity: 0.30, arrows: true, starfield: true, autoRotate: false, edgeFlow: true, bloom: true, warp: true, ambient: true, // visual
   colorBy: 'type', showHulls: true, showClusterLabels: true, clusterForce: false,    // clusters
   theme: 'editorial',                                                                // appearance
@@ -144,6 +144,7 @@ async function loadGraph() {
   if (!filtered) state.allNodes = state.raw.nodes;
   else if (!state.allNodes.length) state.allNodes = (await api('/api/graph')).nodes;
   state.clusters = Cluster.detect(state.raw.nodes, state.raw.links);
+  state.satellites = findSatellites(state.raw.nodes, state.raw.links);
   if (state.activeCluster != null && state.activeCluster >= state.clusters.k) state.activeCluster = null;
   // top-degree hub set for label 'hubs' mode (robust to graph density)
   const deg = new Map();
@@ -163,13 +164,14 @@ async function loadGraph() {
   renderLegend();
   if (timelineMounted) Timeline.update(state.allNodes); // re-bin from the full unfiltered set
   updateOrphanChip();
+  updateChipShares(); // busbar histogram: re-scale the per-type bars to the live census
 }
 
 async function loadStats() {
   const s = await api('/api/stats');
   const n = s.nodes ?? s.node_count ?? s.totals?.nodes ?? state.raw.nodes.length;
   const e = s.edges ?? s.edge_count ?? s.totals?.edges ?? state.raw.links.length;
-  $('#stats').textContent = `${n} nodes · ${e} edges`;
+  $('#stats').innerHTML = `<b>${n}</b> nodes<span class="vsep">&#9615;</span><b>${e}</b> edges`;
 }
 
 // global degree over the full server graph (orphan = degree 0 anywhere, not just in view)
@@ -346,17 +348,106 @@ function makeClusterForce(strength) {
   return force;
 }
 
+// ids of nodes outside the largest connected component. Links are raw (string endpoints) at
+// loadGraph time, before force-graph rebinds them to node objects.
+function findSatellites(nodes, links) {
+  const adj = new Map();
+  const add = (a, b) => { let l = adj.get(a); if (!l) adj.set(a, l = []); l.push(b); };
+  for (const l of links) { add(l.source, l.target); add(l.target, l.source); }
+  const seen = new Set(), comps = [];
+  for (const n of nodes) {
+    if (seen.has(n.id)) continue;
+    const stack = [n.id], comp = [];
+    while (stack.length) {
+      const u = stack.pop();
+      if (seen.has(u)) continue;
+      seen.add(u); comp.push(u);
+      for (const v of adj.get(u) || []) if (!seen.has(v)) stack.push(v);
+    }
+    comps.push(comp);
+  }
+  if (comps.length < 2) return new Set();
+  comps.sort((a, b) => b.length - a.length);
+  return new Set(comps.slice(1).flat());
+}
+
+// custom force: tether disconnected components to the main web. Satellite nodes have no link
+// force holding them, so charge repulsion exiles them far past the main web's rim and
+// zoomToFit must zoom way out. Pull each satellite toward the main component's running
+// centroid; charge then parks them just off the rim. Same vx/vy[/vz] arithmetic as
+// makeClusterForce — safe in both 2D and 3D.
+function makeGravityForce(strength) {
+  let nodes = [];
+  function force(alpha) {
+    const S = state.satellites;
+    if (!S || !S.size || !strength) return;   // strength 0 = slider off
+    let cx = 0, cy = 0, cz = 0, m = 0;
+    for (const n of nodes) {
+      if (S.has(n.id)) continue;
+      cx += n.x; cy += n.y; cz += (n.z || 0); m++;
+    }
+    if (!m) return;
+    cx /= m; cy /= m; cz /= m;
+    const k = alpha * strength;
+    for (const n of nodes) {
+      if (!S.has(n.id)) continue;
+      n.vx += (cx - n.x) * k;
+      n.vy += (cy - n.y) * k;
+      if (n.z != null) n.vz += (cz - n.z) * k;
+    }
+  }
+  force.initialize = (n) => { nodes = n; };
+  return force;
+}
+
 // 2D drag freeze — while a node is dragged the lib writes its fx/x directly every move, so the
 // physics reheat it also hard-codes (d3AlphaTarget(.3).resetCountdown()) exists ONLY to drag
 // neighbours along. At 5k nodes one force tick costs 100-400ms (drag ≈ 11 FPS), so we null the
 // forces for the gesture (ticks become ~free), pull 1-hop neighbours kinematically instead
 // (mirror of the 3D instanced3d.js drag), and restore forces once the engine stops. Instance-
 // guarded: a mode remount rebuilds `graph`, and old force objects must never reach the new one.
+// multi-hop drag ripple: BFS out from the dragged node over the bound links, weighting each hop
+// at 0.6^hop so the local map trails the gesture elastically instead of only 1-hop moving rigidly
+// ("map does not follow along"). Capped at 3 hops / 500 nodes so a 5k-graph hub drag stays inside
+// the web-perf C7 drag budget (adjacency build is O(E) once per gesture; per-move cost = |set|).
+function dragRipple(n, links) {
+  const K = 0.6, MAX_HOPS = 3, MAX_NODES = 500;
+  const adj = new Map();
+  for (const l of links) {
+    const s = l.source, t = l.target;
+    if (!s || !t || typeof s !== 'object' || typeof t !== 'object') continue;
+    let a = adj.get(s); if (!a) adj.set(s, a = []); a.push(t);
+    let b = adj.get(t); if (!b) adj.set(t, b = []); b.push(s);
+  }
+  const w = new Map([[n, 1]]);   // seed excludes n from re-visits; deleted before return
+  let frontier = [n];
+  for (let hop = 1; hop <= MAX_HOPS && frontier.length && w.size < MAX_NODES; hop++) {
+    const kw = Math.pow(K, hop), next = [];
+    for (const u of frontier) {
+      for (const v of (adj.get(u) || [])) {
+        if (w.has(v)) continue;
+        w.set(v, kw); next.push(v);
+        if (w.size >= MAX_NODES) break;
+      }
+      if (w.size >= MAX_NODES) break;
+    }
+    frontier = next;
+  }
+  w.delete(n);                   // self would double-move the dragged node
+  return [...w.entries()];
+}
+
+// org-roam-ui/Obsidian drags run the sim live so the neighbourhood adapts under the gesture;
+// above this node count a force tick costs 100-400ms (web-perf C7 drag gate) and drags fall
+// back to the kinematic freeze+ripple path. Same size-gating precedent as _panLOD.
+const LIVE_DRAG_MAX = 1500;
+const liveDrag = (g) => g.graphData().nodes.length <= LIVE_DRAG_MAX;
+
 let _frozenForces = null;   // { g, forces: {name: force|null} } while frozen
 function freezeForces(g) {
   if (_frozenForces) return;
   const forces = {};
-  for (const k of ['charge', 'link', 'center', 'collide', 'cluster']) { forces[k] = g.d3Force(k) || null; g.d3Force(k, null); }
+  for (const k of ['charge', 'link', 'center', 'collide', 'cluster', 'gravity']) { forces[k] = g.d3Force(k) || null; g.d3Force(k, null); }
   // zero residual velocities: absent forces d3 still integrates x += vx each tick, so a drag begun
   // mid-settle would leave the whole graph coasting for the frozen window
   for (const n of g.graphData().nodes) { n.vx = 0; n.vy = 0; if (n.vz !== undefined) n.vz = 0; }
@@ -383,6 +474,9 @@ function applyForces(g) {
     : null);
   // topic-cluster cohesion (2D + 3D): groups same-community nodes so topics separate
   g.d3Force('cluster', s.clusterForce && state.clusters ? makeClusterForce(0.45) : null);
+  // disconnected-component tether (2D + 3D): reads state.satellites each tick (no-op when
+  // empty), so it stays live across applyData() swaps that never re-run applyForces
+  g.d3Force('gravity', makeGravityForce(s.gravity));
 }
 
 // passed to Glow3d (3D topic orbs) — thin getters, no coupling to app internals
@@ -487,31 +581,43 @@ function renderGraph() {
     graph.nodeCanvasObjectMode(() => 'after').nodeCanvasObject(drawLabel2d);
     graph.onZoom(onPan2d);                       // link-LOD: hide edges while the view is moving
     state._panLOD = graph.graphData().links.length > 1500;   // only LOD dense graphs; small ones keep edges mid-pan
-    // kinematic node drag (see freezeForces): freeze physics on the first real move, pull 1-hop
-    // neighbours along at K<1 so edges flex; the force-free alpha tail then stops the engine,
-    // whose handler below unfreezes. delta = the lib's per-move translation in graph coords.
-    // Neighbour capture keys on the dragged node (NOT the freeze flag): consecutive drags land
-    // inside the previous drag's ~2s alpha tail, where forces are still frozen but the new
-    // gesture still needs its own neighbour set.
+    // node drag, org-roam-ui/Obsidian-style (liveDrag): the sim stays LIVE for the gesture so
+    // link/charge/gravity pull the neighbourhood along and the drop lands in a new equilibrium —
+    // no snap-back. The lib's own drag reheat (d3AlphaTarget(.3) per move) is bricked on a settled
+    // graph because alpha sits below the d3AlphaMin(0.02) early-stop, so the gesture's first move
+    // drops alphaMin to 0 (org-roam-ui ships alphaMin:0 permanently); drag end restores 0.02 and
+    // the ~0.3 alpha tail settles to convergence. Above LIVE_DRAG_MAX nodes a force tick costs
+    // 100-400ms (drag ≈ 11 FPS, the web-perf C7 gate), so huge graphs keep the kinematic fallback:
+    // freeze physics, pull the multi-hop ripple along (dragRipple: weight 0.6^hop, ≤3 hops,
+    // ≤500 nodes), then unfreeze + one reheat at drag end so forces still settle the drop.
+    // delta = the lib's per-move translation in graph coords. Neighbour capture keys on the
+    // dragged node (NOT the freeze flag): consecutive drags land inside the previous drop's
+    // live settle window and the new gesture still needs its own ripple set.
     let dragNbrs = null, dragNode = null;
     graph.onNodeDrag((n, delta) => {
-      if (!_frozenForces) freezeForces(graph);
-      if (dragNode !== n) {
-        dragNode = n;
-        const nb = new Set();
-        for (const l of graph.graphData().links) {
-          const s = l.source, t = l.target;
-          if (s === n && t && typeof t === 'object') nb.add(t);
-          else if (t === n && s && typeof s === 'object') nb.add(s);
+      if (liveDrag(graph)) {
+        // un-brick (settled alpha sits below the 0.02 early-stop) AND kick alpha hot: ramping
+        // from ~0.02 toward the lib's 0.3 drag target takes seconds, during which the
+        // neighbourhood barely adapts and the drop still snaps back
+        if (dragNode !== n) { dragNode = n; graph.d3AlphaMin(0); graph.d3ReheatSimulation(); }
+      } else {
+        if (!_frozenForces) freezeForces(graph);
+        if (dragNode !== n) {
+          dragNode = n;
+          dragNbrs = dragRipple(n, graph.graphData().links);
         }
-        nb.delete(n);                        // self-loop would double-move the dragged node
-        dragNbrs = [...nb];
+        if (dragNbrs) for (const [m, kw] of dragNbrs) { if (m.x == null) continue; m.x += delta.x * kw; m.y += delta.y * kw; }
+        onPan2d();                           // dense-graph LOD: hide 10k edge strokes while dragging (same as pan) — full-stroke rasters cause 400ms+ compositor stalls. Kinematic-only: a live drag IS the elastic links, hiding them kills the org-roam feel
       }
-      const K = 0.6;
-      if (dragNbrs) for (const m of dragNbrs) { if (m.x == null) continue; m.x += delta.x * K; m.y += delta.y * K; }
-      onPan2d();                             // dense-graph LOD: hide 10k edge strokes while dragging (same as pan) — full-stroke rasters cause 400ms+ compositor stalls
     });
-    graph.onNodeDragEnd(() => { dragNbrs = null; dragNode = null; });
+    graph.onNodeDragEnd(() => {
+      dragNbrs = null; dragNode = null;
+      // restore the early-stop floor UNCONDITIONALLY: a mid-gesture data swap can flip
+      // liveDrag() between first-move and drag-end, and the live branch's alphaMin(0)
+      // must not leak into a 15s full-force cooldown on a big graph
+      graph.d3AlphaMin(0.02);                                        // settle tail runs to the early-stop
+      if (!liveDrag(graph)) { unfreezeForces(graph); graph.d3ReheatSimulation(); }
+    });
   }
   if (state.mode === '3d' && window.Glow3d) Glow3d.install(graph, glowCtx);
   if (state.mode === '3d' && window.Starfield) Starfield.install(graph, glowCtx);
@@ -539,10 +645,21 @@ function renderGraph() {
       onClick: handleNodeClick,
       nodeLabel: nodeTooltip,
       getSettings: () => state.settings,
+      dragRipple,                 // kinematic-fallback multi-hop follow (same weights as the 2D drag)
+      // live-vs-kinematic drag contract shared with the 2D path: small graphs drag with the sim
+      // live (org-roam-ui style); huge graphs freeze forces for the gesture so a hot post-drop
+      // sim can't run 100-400ms ticks per frame or double-move the kinematic ripple set
+      liveDrag: () => liveDrag(graph),
+      freezeForces: () => freezeForces(graph),
+      unfreezeForces: () => unfreezeForces(graph),
     });
   }
   graph.onEngineStop(() => {
-    unfreezeForces(graph);   // end of a 2D drag's force-free alpha tail → give physics back
+    unfreezeForces(graph);   // backstop only (drag end unfreezes): e.g. a remount mid-gesture
+    // backstop for the live-drag alphaMin(0) window (e.g. data swap mid-gesture). MUST be
+    // guarded: the 3D lib's d3AlphaMin setter schedules a digest that flips engineRunning back
+    // on even for a no-op write → unguarded, first settle ignites a 60Hz stop/restart loop
+    if (graph.d3AlphaMin() !== 0.02) graph.d3AlphaMin(0.02);
     if (state._needFit) { graph.zoomToFit(500, 60); state._needFit = false; }
     // auto-pause is on (force-graph default): when the engine cools the render loop stops
     // painting, so nudge exactly one repaint at the settled layout — re-runs the 2D custom
@@ -736,7 +853,7 @@ function renderSidebar(node, nb) {
   const ment = mentionLists(node);
   const mentionRow = (n, withBtn) =>
     `<li class="mention" data-node="${esc(n.id)}">
-       <i style="background:${TYPE_COLORS[n.type] || '#8b9692'}"></i>
+       <i style="--tc:${TYPE_COLORS[n.type] || 'var(--dim)'}"></i>
        <span class="mention-title">${esc(n.title || n.id)}</span>
        ${withBtn ? `<button class="mention-link" data-link="${esc(n.id)}">Link</button>` : ''}</li>`;
   const relOf = (id) => {
@@ -746,7 +863,9 @@ function renderSidebar(node, nb) {
     return l.source === node.id ? `${l.rel} →` : `← ${l.rel}`;
   };
   sidebar.innerHTML = `
-    <button class="close" id="sb-close">&times;</button>
+    <div class="side-rail"></div>
+    <div class="sb-scroll">
+    <button class="close" id="sb-close"><svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
     <h2>${esc(node.title)}</h2>
     <div class="meta">
       <span class="type-badge" style="--c:${color}">${esc(node.type)}</span>
@@ -755,16 +874,16 @@ function renderSidebar(node, nb) {
     ${node.tags.length ? `<div class="tags">${node.tags.map((t) =>
       `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
     <div class="body md">${renderBody(node.body)}</div>
-    ${node.urls.length ? `<h3>links</h3><ul class="urls">${node.urls.map((u) =>
+    ${node.urls.length ? `<h3><span>links</span></h3><ul class="urls">${node.urls.map((u) =>
       `<li><a href="${esc(u.url)}" target="_blank" rel="noopener">${esc(u.label || u.url)}</a>
        <span class="kind">${esc(u.kind || 'web')}</span></li>`).join('')}</ul>` : ''}
-    ${others.length ? `<h3>neighbors</h3><ul class="neighbors">${others.map((n) =>
-      `<li class="neighbor" data-node="${esc(n.id)}">
-         <i style="background:${TYPE_COLORS[n.type] || '#8b9692'}"></i>
-         ${esc(n.title)} <span class="mono dim">${esc(relOf(n.id))}</span></li>`).join('')}</ul>` : ''}
-    ${ment.linked.length ? `<h3>linked mentions</h3><ul class="mentions">${ment.linked.map((n) =>
+    ${others.length ? `<h3><span>neighbors</span><span class="scount">${String(others.length).padStart(2, '0')}</span></h3><ul class="neighbors">${others.map((n, i) =>
+      `<li class="neighbor" data-node="${esc(n.id)}" style="--type-c:${TYPE_COLORS[n.type] || 'var(--dim)'};--i:${i}">
+         <span class="tree">${i === others.length - 1 ? '└─' : '├─'}</span>
+         <span class="ntitle">${esc(n.title)}</span> <span class="mono dim">${esc(relOf(n.id))}</span></li>`).join('')}</ul>` : ''}
+    ${ment.linked.length ? `<h3><span>linked mentions</span><span class="scount">${String(ment.linked.length).padStart(2, '0')}</span></h3><ul class="mentions">${ment.linked.map((n) =>
       mentionRow(n, false)).join('')}</ul>` : ''}
-    ${ment.unlinked.length ? `<h3>unlinked mentions</h3><ul class="mentions">${ment.unlinked.map((n) =>
+    ${ment.unlinked.length ? `<h3><span>unlinked mentions</span><span class="scount">${String(ment.unlinked.length).padStart(2, '0')}</span></h3><ul class="mentions">${ment.unlinked.map((n) =>
       mentionRow(n, true)).join('')}${ment.unlinkedMore ? `<li class="mention-more mono dim">+${ment.unlinkedMore} more</li>` : ''}</ul>` : ''}
     <div class="actions">
       <button id="sb-focus">${state.focusRoots.size ? 'Spread here' : 'Focus'}</button>
@@ -788,8 +907,17 @@ function renderSidebar(node, nb) {
       <label>target node</label>
       <input id="lk-search" placeholder="search…" autocomplete="off">
       <ul id="lk-results"></ul>
+    </div>
     </div>`;
   sidebar.classList.remove('hidden');
+  // one-shot interrogation readout: plug in, sweep the rail, ping the neighbors
+  sidebar.classList.remove('scanning');
+  void sidebar.offsetWidth; // restart the one-shot when re-selecting
+  sidebar.classList.add('scanning');
+  const lastAnim = sidebar.querySelector('.neighbor:last-of-type') || sidebar;
+  const unscan = () => sidebar.classList.remove('scanning');
+  lastAnim.addEventListener('animationend', unscan, { once: true });
+  setTimeout(unscan, 2500); // backstop (reduced-motion fires no animationend)
 
   $('#sb-close').onclick = closeSidebar;
   $('#sb-focus').onclick = () => {
@@ -834,7 +962,7 @@ function renderSidebar(node, nb) {
     $('#lk-results').innerHTML = results
       .filter((r) => r.id !== node.id)
       .map((r) => `<li data-node="${esc(r.id)}">
-        <i style="background:${TYPE_COLORS[r.type] || '#8b9692'}"></i>${esc(r.title)}</li>`)
+        <i style="--tc:${TYPE_COLORS[r.type] || 'var(--dim)'}"></i>${esc(r.title)}</li>`)
       .join('');
   }, 200);
   $('#lk-results').onclick = async (e) => {
@@ -914,13 +1042,29 @@ $('#tag-filter').addEventListener('input', debounce(() => {
 
 const chipsEl = $('#type-chips');
 chipsEl.innerHTML = TYPES.map((t) =>
-  `<button class="chip" data-type="${t}"><i style="background:${TYPE_COLORS[t]}"></i>${t}</button>`).join('');
+  `<button class="chip" data-type="${t}" aria-pressed="false">
+     <span class="tlab"><i class="tport" style="--tc:${TYPE_COLORS[t]}"></i>${t}</span>
+     <span class="track"><span class="bar"></span></span>
+   </button>`).join('');
+// busbar histogram: fixed-width tracks, bar = sqrt(count/max) so types are comparable
+function updateChipShares() {
+  const counts = {};
+  for (const n of state.allNodes) counts[n.type] = (counts[n.type] || 0) + 1;
+  const max = Math.max(1, ...Object.values(counts));
+  chipsEl.querySelectorAll('.chip').forEach((c) => {
+    const share = Math.sqrt((counts[c.dataset.type] || 0) / max);
+    c.querySelector('.bar').style.setProperty('--share', share.toFixed(3));
+  });
+}
 chipsEl.addEventListener('click', (e) => {
   const btn = e.target.closest('.chip');
   if (!btn) return;
   state.type = state.type === btn.dataset.type ? null : btn.dataset.type;
-  chipsEl.querySelectorAll('.chip').forEach((c) =>
-    c.classList.toggle('active', c.dataset.type === state.type));
+  chipsEl.querySelectorAll('.chip').forEach((c) => {
+    const on = c.dataset.type === state.type;
+    c.classList.toggle('active', on);
+    c.setAttribute('aria-pressed', on);
+  });
   loadGraph();
 });
 
@@ -981,7 +1125,9 @@ $('#timeline-color').onclick = () => {
 
 function updateOrphanChip() {
   const btn = $('#orphan-chip');
-  btn.textContent = `orphans (${orphanCount()})`;
+  const n = orphanCount();
+  btn.innerHTML = `<i class="tport"></i>orphans<span class="ocount">&middot;${n}</span>`;
+  btn.classList.toggle('anomaly', n > 0);
   btn.classList.toggle('active', state.orphansOnly);
 }
 $('#orphan-chip').onclick = () => {
@@ -1022,7 +1168,7 @@ function qsRender(q) {
   qsState.sel = 0;
   $('#sw-results').innerHTML = qsState.items.map((n, i) =>
     `<li class="${i === 0 ? 'sel' : ''}" data-node="${esc(n.id)}">
-       <i style="background:${TYPE_COLORS[n.type] || '#8b9692'}"></i>
+       <i style="--tc:${TYPE_COLORS[n.type] || 'var(--dim)'}"></i>
        <span class="sw-title">${esc(n.title || n.id)}</span>
        <span class="mono dim">${esc(n.id)}</span></li>`).join('');
 }
@@ -1082,6 +1228,7 @@ const RANGES = [
   ['Repulsion', 'charge', -800, -30, 10, 'physics'],
   ['Link distance', 'linkDist', 10, 120, 1, 'physics'],
   ['Link strength', 'linkStrength', 0, 1, 0.05, 'physics'],
+  ['Gravity', 'gravity', 0, 0.3, 0.01, 'physics'],
   ['Link opacity', 'linkOpacity', 0, 1, 0.05, 'visual'],
 ];
 const TOGGLES = [
@@ -1097,26 +1244,26 @@ const TOGGLES = [
 function renderSettings() {
   const s = state.settings;
   const rangeRow = ([label, key, min, max, step, kind]) => `
-    <label>${label}</label>
+    <div class="ctl-row"><label>${label}</label><output data-ro="${key}">${s[key]}</output></div>
     <input type="range" data-key="${key}" data-kind="${kind}" min="${min}" max="${max}" step="${step}" value="${s[key]}">`;
   const toggleRow = ([label, key, kind]) => `
-    <button class="seg-toggle ${s[key] ? 'on' : ''}" data-key="${key}" data-kind="${kind}">${label}: <b>${s[key] ? 'on' : 'off'}</b></button>`;
+    <button class="seg-toggle ${s[key] ? 'on' : ''}" data-key="${key}" data-kind="${kind}">${label} <b>${s[key] ? 'on' : 'off'}</b></button>`;
   $('#settings').innerHTML = `
-    <button class="close" id="set-close">&times;</button>
+    <button class="close" id="set-close"><svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
     <h2>settings</h2>
-    <h3>theme</h3>
+    <h3><span>theme</span></h3>
     <div class="panel theme-list">
       ${Object.keys(THEMES).map((k) => `
         <button class="theme-opt ${s.theme === k ? 'on' : ''}" data-theme="${k}">
-          <span class="sw" style="background:${THEMES[k]['--bg']};border-color:${THEMES[k]['--line']}"><i style="background:${THEMES[k]['--green']}"></i><i style="background:${THEMES[k]['--purple']}"></i></span>${THEME_NAMES[k]}
+          <span class="sw" style="--tbg:${THEMES[k]['--bg']};--tac:${THEMES[k]['--green']}"></span>${THEME_NAMES[k]}
         </button>`).join('')}
     </div>
-    <h3>physics</h3>
+    <h3><span>physics</span></h3>
     <div class="panel">
       ${RANGES.filter((r) => r[5] === 'physics').map(rangeRow).join('')}
       ${TOGGLES.filter((t) => t[2] === 'physics').map(toggleRow).join('')}
     </div>
-    <h3>visual</h3>
+    <h3><span>visual</span></h3>
     <div class="panel">
       ${RANGES.filter((r) => r[5] === 'visual').map(rangeRow).join('')}
       ${TOGGLES.filter((t) => t[2] === 'visual').map(toggleRow).join('')}
@@ -1126,12 +1273,12 @@ function renderSettings() {
           `<button data-mode="${m}" class="${s.labelMode === m ? 'active' : ''}">${m}</button>`).join('')}
       </div>
     </div>
-    <h3>clusters</h3>
+    <h3><span>clusters</span></h3>
     <div class="panel">
-      <button class="seg-toggle ${s.colorBy === 'community' ? 'on' : ''}" id="set-colorby">Color by: <b>${s.colorBy}</b></button>
-      <button class="seg-toggle ${s.showHulls ? 'on' : ''}" data-key="showHulls" data-kind="cluster">Topic glow: <b>${s.showHulls ? 'on' : 'off'}</b></button>
-      <button class="seg-toggle ${s.showClusterLabels ? 'on' : ''}" data-key="showClusterLabels" data-kind="cluster">Cluster labels: <b>${s.showClusterLabels ? 'on' : 'off'}</b></button>
-      <button class="seg-toggle ${s.clusterForce ? 'on' : ''}" data-key="clusterForce" data-kind="physics">Topic repulsion: <b>${s.clusterForce ? 'on' : 'off'}</b></button>
+      <button class="seg-toggle ${s.colorBy === 'community' ? 'on' : ''}" id="set-colorby">Color by <b>${s.colorBy}</b></button>
+      <button class="seg-toggle ${s.showHulls ? 'on' : ''}" data-key="showHulls" data-kind="cluster">Topic glow <b>${s.showHulls ? 'on' : 'off'}</b></button>
+      <button class="seg-toggle ${s.showClusterLabels ? 'on' : ''}" data-key="showClusterLabels" data-kind="cluster">Cluster labels <b>${s.showClusterLabels ? 'on' : 'off'}</b></button>
+      <button class="seg-toggle ${s.clusterForce ? 'on' : ''}" data-key="clusterForce" data-kind="physics">Topic repulsion <b>${s.clusterForce ? 'on' : 'off'}</b></button>
     </div>
     <div class="actions"><button id="set-reset">Reset to defaults</button></div>`;
   $('#settings').classList.remove('hidden');
@@ -1150,6 +1297,8 @@ function renderSettings() {
   $('#settings').querySelectorAll('input[type=range]').forEach((el) => {
     el.oninput = () => {
       state.settings[el.dataset.key] = parseFloat(el.value);
+      const ro = $('#settings').querySelector(`output[data-ro="${el.dataset.key}"]`);
+      if (ro) ro.textContent = el.value;
       onSettingChange(el.dataset.kind);
     };
   });
@@ -1185,9 +1334,9 @@ function renderSettings() {
 function renderLegend() {
   const C = state.clusters, el = $('#legend');
   if (!C || state.settings.colorBy !== 'community') { el.classList.add('hidden'); el.innerHTML = ''; return; }
-  el.innerHTML = `<h3>clusters (${C.k})</h3><ul>` + C.communities.map((c) =>
+  el.innerHTML = `<h3><span>clusters</span><span class="scount">${C.k}</span></h3><ul>` + C.communities.map((c) =>
     `<li class="leg ${state.activeCluster === c.idx ? 'active' : ''}" data-c="${c.idx}">
-       <i style="background:${c.color}"></i>${esc(c.hubTitle)} <span class="mono dim">${c.size}</span></li>`).join('') + '</ul>';
+       <i style="--tc:${c.color}"></i>${esc(c.hubTitle)} <span class="mono dim">${c.size}</span></li>`).join('') + '</ul>';
   el.classList.remove('hidden');
   el.querySelectorAll('.leg').forEach((li) => {
     li.onclick = () => {

@@ -6,7 +6,7 @@
 <title>mindgap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Hanken+Grotesk:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400..700&family=Geist+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 <script src="https://unpkg.com/force-graph"></script>
 <script src="https://unpkg.com/3d-force-graph"></script>
@@ -35,18 +35,18 @@
 <body>
 <header id="header">
   <div class="row">
-    <h1 class="brand">mind<span>gap</span></h1>
-    <input id="search" type="search" placeholder="search nodes…" autocomplete="off">
-    <input id="tag-filter" type="text" placeholder="tag" autocomplete="off">
+    <h1 class="brand port is-live">mind<span>gap</span></h1>
+    <span class="channel ch-search" data-prompt="/"><input id="search" type="search" placeholder="search nodes…" autocomplete="off"></span>
+    <span class="channel ch-tag" data-prompt="#"><input id="tag-filter" type="text" placeholder="tag" autocomplete="off"></span>
     <div class="seg" id="mode-toggle">
       <button id="mode-2d" class="active">2D</button>
       <button id="mode-3d">3D</button>
     </div>
-    <button id="autorotate-toggle" class="ghost hidden" title="auto-orbit (3D)">&#8635; orbit</button>
-    <button id="focus-reset" class="ghost hidden" title="reset focus (Esc)">&#9678; unfocus</button>
-    <button id="timeline-toggle" class="ghost" title="timeline">&#9202; timeline</button>
-    <button id="settings-toggle" class="ghost" title="settings">&#9881; settings</button>
-    <button id="help-toggle" class="ghost" title="keyboard shortcuts (?)">&#9000; keys</button>
+    <button id="autorotate-toggle" class="ghost port hidden" title="auto-orbit (3D)">orbit</button>
+    <button id="focus-reset" class="ghost port hidden" title="reset focus (Esc)">unfocus</button>
+    <button id="timeline-toggle" class="ghost port" title="timeline">time</button>
+    <button id="settings-toggle" class="ghost port" title="settings">cfg</button>
+    <button id="help-toggle" class="ghost port" title="keyboard shortcuts (?)">keys</button>
   </div>
   <div class="row">
     <div id="type-chips"></div>
@@ -82,8 +82,9 @@
 
 <div id="help" class="hidden">
   <div class="help-box">
-    <button class="close" id="help-close" title="close (Esc)">&times;</button>
-    <h2>shortcuts</h2>
+  <div class="help-in">
+    <button class="close" id="help-close" title="close (Esc)"><svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
+    <h2>key map</h2>
     <div class="help-cols">
       <div>
         <h3>keyboard</h3>
@@ -108,6 +109,7 @@
         </dl>
       </div>
     </div>
+  </div>
   </div>
 </div>
 

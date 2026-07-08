@@ -89,7 +89,16 @@
     // (baseRender) reuses it unchanged and a still scene costs ~nothing.
     const baseRender = A.ShaderPass.prototype.render;
     const camSig = () => { const p = camera.position, q = camera.quaternion; return p.x + ',' + p.y + ',' + p.z + '|' + q.x + ',' + q.y + ',' + q.z + ',' + q.w; };
-    const hubSig = () => { let s = ''; for (let i = 0; i < hubObjs.length; i++) { const p = hubObjs[i].position; s += (p.x | 0) + ',' + (p.y | 0) + ',' + (p.z | 0) + ';'; } return s; };
+    // hub signature reads node DATA (x/y/z), not __threeObj.position: the lib only copies data into
+    // its (empty, instanced-mode) node objects on engine ticks, and kinematic drags move data WITHOUT
+    // ticking — an object-position sig stays constant through a drag, the gate skips the re-render,
+    // and the stale bloomTexture leaves a glow ghost at the hub's old position until the camera moves.
+    const hubSig = () => {
+      let s = '';
+      const ns = graph.graphData().nodes;
+      for (let i = 0; i < ns.length; i++) { const n = ns[i]; if (hubIds.has(n.id)) s += (n.x | 0) + ',' + (n.y | 0) + ',' + ((n.z || 0) | 0) + ';'; }
+      return s;
+    };
     combinePass.render = function (rndr, writeBuffer, readBuffer, dt, mask) {
       const cs = camSig(), hs = hubSig();
       if (cs !== lastCamSig || hs !== lastHubSig) {
