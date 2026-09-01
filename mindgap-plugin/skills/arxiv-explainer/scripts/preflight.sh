@@ -10,7 +10,7 @@ report_pylib() {
 }
 
 # CLI tools
-for c in python3 mindgap ffmpeg manim pdftoppm; do report_cmd "$c"; done
+for c in python3 mindmap ffmpeg manim pdftoppm; do report_cmd "$c"; done
 # Python libs (import name in 2nd arg)
 report_pylib pymupdf fitz
 report_pylib pillow PIL

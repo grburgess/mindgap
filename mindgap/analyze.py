@@ -1,11 +1,11 @@
+# mindgap/analyze.py
 """Pure stdlib graph-mining engine for mindgap. Takes the dict from
 db.graph(conn); imports nothing from db; performs no IO. See
-docs/superpowers/specs/second-brain-mining.md.
+docs/superpowers/specs/2026-06-25-second-brain-mining-design.md.
 
-mentions=0.25 is cheap hygiene, not the precision lever — mentions edges often
-double-encode a structural edge, so down-weighting them rarely moves a ranking.
-The real per-mode levers are: connect=the person/hub support guard,
-enrich=restart + hub suppression, learn=the exclusion filters.
+mentions=0.25 is cheap hygiene, not the precision lever — 83% of mentions
+double-encode a structural edge. The real per-mode levers are: connect=the
+person/hub support guard, enrich=restart + hub suppression, learn=the filters.
 """
 import math
 from datetime import datetime, timezone
@@ -159,7 +159,7 @@ def _is_excluded(nid, m, total_deg):
     body = (m["body"] or "").strip().upper()
     if body.startswith("REFUTED") or body.startswith("REJECTED"):
         return True
-    if m["created_by"].startswith("capture:") and m["type"] in ("design", "feature", "learning"):
+    if m["created_by"] == "capture:mindmap" and m["type"] in ("design", "feature", "learning"):
         return True
     if nid in PLACEHOLDER_IDS:
         return True

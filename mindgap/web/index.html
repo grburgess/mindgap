@@ -31,16 +31,22 @@
 <script src="/warp.js"></script>
 <script src="/spacefx.js"></script>
 <script src="/instanced3d.js"></script>
+<script src="/plex.js"></script>
 </head>
 <body>
 <header id="header">
   <div class="row">
-    <h1 class="brand port is-live">mind<span>gap</span></h1>
+    <h1 class="brand port is-live">mind<span>map</span></h1>
     <span class="channel ch-search" data-prompt="/"><input id="search" type="search" placeholder="search nodes…" autocomplete="off"></span>
     <span class="channel ch-tag" data-prompt="#"><input id="tag-filter" type="text" placeholder="tag" autocomplete="off"></span>
     <div class="seg" id="mode-toggle">
       <button id="mode-2d" class="active">2D</button>
       <button id="mode-3d">3D</button>
+      <button id="mode-focus">Focus</button>
+    </div>
+    <div id="plex-nav" class="seg hidden">
+      <button id="plex-back" title="back">&#8592;</button>
+      <button id="plex-forward" title="forward">&#8594;</button>
     </div>
     <button id="autorotate-toggle" class="ghost port hidden" title="auto-orbit (3D)">orbit</button>
     <button id="focus-reset" class="ghost port hidden" title="reset focus (Esc)">unfocus</button>

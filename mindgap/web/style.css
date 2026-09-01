@@ -282,6 +282,49 @@ button.ghost.port::before { width: 5px; height: 5px; margin-right: 6px; }
 
 #graph { position: fixed; inset: 0; }
 
+/* ---------- Focus (Plex): tiered cross layout, no physics ---------- */
+
+.plex-cross {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 32px;
+  padding: calc(var(--hdr-h) + 24px) 40px 24px;
+  overflow: auto;
+}
+.plex-tier { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.plex-mid { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.plex-jumps { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+.plex-jumps-left { align-items: flex-end; }
+.plex-jumps-right { align-items: flex-start; }
+.plex-empty { text-align: center; padding-top: 40vh; }
+
+.plex-node {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  padding: 8px 12px;
+  max-width: 220px;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--snap);
+}
+.plex-node:hover { border-color: var(--green); }
+.plex-node .plex-rel { font-size: 10px; letter-spacing: .04em; }
+.plex-node .plex-title { color: var(--text); font-family: var(--font-mono); font-size: 12px; }
+
+.plex-active {
+  border: 1px solid var(--green);
+  background: var(--accent-dim);
+  padding: 14px 20px;
+  flex: none;
+}
+.plex-active .plex-title { color: var(--accent-ink); font-size: 14px; font-weight: 500; }
+
+#plex-nav.seg button:disabled { opacity: .3; cursor: not-allowed; }
+
 .gtip {
   font-family: var(--font-mono);
   font-size: 12px;

@@ -1,7 +1,7 @@
 import subprocess, pathlib
 
 SCRIPT = pathlib.Path(__file__).with_name("preflight.sh")
-TOOLS = ["python3", "mindgap", "ffmpeg", "manim", "pdftoppm"]
+TOOLS = ["python3", "mindmap", "ffmpeg", "manim", "pdftoppm"]
 PYLIBS = ["pymupdf", "pillow"]
 
 def run():

@@ -38,7 +38,7 @@ def main():
                 f"The item just read is a research paper ({source(tool_name, tool_input)}). "
                 "The paper-to-mindmap skill captures papers read for technical learning "
                 "(ML, computer vision, remote sensing, property analytics, etc.) into the "
-                "mindgap knowledge graph, linking them with evidence to related existing "
+                "mindmap knowledge graph, linking them with evidence to related existing "
                 "nodes. It applies only when the paper was read to learn something in those "
                 "domains."
             )

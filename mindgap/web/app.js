@@ -1,8 +1,8 @@
 /* mindgap UI — vanilla JS against the /api contract. CDN globals: ForceGraph, ForceGraph3D, marked, DOMPurify. */
 'use strict';
 
-const TYPES = ['concept', 'definition', 'software', 'repo', 'page', 'paper', 'person', 'team', 'design', 'feature', 'learning', 'jira-ticket', 'stub'];
-const RELS = ['relates_to', 'defines', 'implements', 'depends_on', 'cites', 'part_of', 'mentions', 'assigned_to', 'reported_by'];
+const TYPES = ['concept', 'definition', 'software', 'repo', 'page', 'paper', 'person', 'team', 'design', 'feature', 'learning', 'jira-ticket', 'todo', 'stub'];
+const RELS = ['relates_to', 'defines', 'implements', 'depends_on', 'cites', 'part_of', 'mentions', 'assigned_to', 'reported_by', 'resolved_by'];
 const TYPE_COLORS = {
   concept: '#57c7a4',
   definition: '#a78bfa',
@@ -16,11 +16,12 @@ const TYPE_COLORS = {
   feature: '#f59e0b',
   learning: '#10b981',
   'jira-ticket': '#06b6d4',
+  todo: '#fb7185',
   stub: '#5b6663',
 };
 
 const SETTINGS_DEFAULTS = Object.freeze({
-  charge: -260, linkDist: 55, linkStrength: 0.3, velocityDecay: 0.32, collide: true, gravity: 0.1, // physics
+  charge: -260, linkDist: 55, linkStrength: 0.3, velocityDecay: 0.32, collide: true, gravity: 0.1, centerForce: 0, // physics
   labelMode: 'hubs', linkOpacity: 0.30, arrows: true, starfield: true, autoRotate: false, edgeFlow: true, bloom: true, warp: true, ambient: true, // visual
   colorBy: 'type', showHulls: true, showClusterLabels: true, clusterForce: false,    // clusters
   theme: 'editorial',                                                                // appearance
@@ -76,11 +77,8 @@ const THEMES = {
   graphite:  { '--bg': '#0e0e10', '--bg-raised': '#16161a', '--bg-panel': '#131316', '--line': '#2a2a30', '--text': '#e0ddd6', '--dim': '#8a857c', '--green': '#e0a458', '--purple': '#5ec8b8', '--danger': '#e8765a' },
   aubergine: { '--bg': '#120c16', '--bg-raised': '#1a1020', '--bg-panel': '#160d1b', '--line': '#2e2138', '--text': '#e6dcea', '--dim': '#988aa0', '--green': '#c77dff', '--purple': '#ff6ac1', '--danger': '#ff7a7a' },
   carbon:    { '--bg': '#050505', '--bg-raised': '#0d0d0f', '--bg-panel': '#0a0a0c', '--line': '#232327', '--text': '#ececf0', '--dim': '#80808a', '--green': '#57c7a4', '--purple': '#7aa2ff', '--danger': '#e76f51' },
-  // Cape — Cape Analytics (a Moody's company) brand: deep navy #002B49 base, signature mint
-  // #85FFB3 + indigo #5A4FFF accents. Geospatial/aerial feel; pairs with the 3D glow + stars.
-  cape:      { '--bg': '#02192a', '--bg-raised': '#082842', '--bg-panel': '#061f34', '--line': '#14395a', '--text': '#dceaf3', '--dim': '#6f8ea6', '--green': '#85ffb3', '--purple': '#5a4fff', '--danger': '#ff6b5e' },
 };
-const THEME_NAMES = { editorial: 'Editorial', midnight: 'Midnight', graphite: 'Graphite', aubergine: 'Aubergine', carbon: 'Carbon', cape: 'Cape' };
+const THEME_NAMES = { editorial: 'Editorial', midnight: 'Midnight', graphite: 'Graphite', aubergine: 'Aubergine', carbon: 'Carbon' };
 function themeBg() { return (THEMES[state.settings.theme] || THEMES.editorial)['--bg']; }
 function applyTheme(name) {
   const t = THEMES[name] || THEMES.editorial;
@@ -93,6 +91,9 @@ const state = {
   raw: { nodes: [], links: [] },   // server data (q/type/tag-filtered); links keep string source/target
   allNodes: [],                    // full unfiltered node set — timeline histogram bins this
   focusRoots: new Set(),           // org-roam local graph: union of roots' 1-hop rings
+  plexActive: null,                // Focus (Plex) mode: id of the centered node
+  plexHistory: [],                 // Focus mode recenter history (browser-history model)
+  plexIndex: -1,                   // pointer into plexHistory
   timeline: { cutoff: null, dir: 'before', playing: false, colorMode: 'off', recencyLo: null, recencyHi: null }, // time cutoff (before/after) + node-color override
   orphansOnly: false,              // header chip: keep only degree-0 nodes
   selected: null,
@@ -109,7 +110,7 @@ let mountedMode = null;
 let panTimer = null;                    // 2D link-LOD: hide edges while panning, restore ~300ms after
 // perf instrumentation: expose the live graph instance + state to injected harnesses
 // (tools/perf/fps_harness.js). getter is required — `graph` is reassigned on 2D↔3D remount.
-window.__mm = { get graph() { return graph; }, state };
+window.__mm = { get graph() { return graph; }, state, get act() { return act; } };
 
 const $ = (sel) => document.querySelector(sel);
 const graphEl = $('#graph');
@@ -265,6 +266,99 @@ function drawLabel2d(n, ctx, scale) {
   ctx.fillStyle = 'rgba(215,224,220,0.92)';
   ctx.fillText(n.title || n.id, n.x, n.y + Math.sqrt(nodeVal(n)) * graph.nodeRelSize() + 1);
 }
+/* ---------- live activity: 'neurons firing' (Neural Vault-style) ----------
+   Poll /api/activity for node touches recorded by the MCP server (or POSTed by
+   external hooks); flash touched nodes (green read / red write), spread an
+   attenuated pulse to 1-hop neighbours, fade out over ACT_FADE_MS. 2D only —
+   the 3D InstancedMesh path would need per-instance color churn. While any
+   flash is live we hold autoPauseRedraw(false) so the idle canvas keeps
+   painting frames, then re-idle. */
+const ACT_POLL_MS = 1000, ACT_FADE_MS = 2600, ACT_SPREAD = 0.35;
+const ACT_COLORS = { read: '#57c7a4', write: '#e76f51' };
+const act = { since: 0, primed: false, flashes: new Map(), painting: false };
+
+function hexAlpha(hex, a) {
+  const h = hex.replace('#', '');
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return `rgba(${r},${g},${b},${a})`;
+}
+function actApply(events) {
+  if (!events.length) return;
+  const adj = new Map(); // 1-hop spread targets; rebuilt per batch (events are rare, links O(E) scan is the hlFor precedent)
+  for (const l of state.raw.links) {
+    const s = l.source.id ?? l.source, t = l.target.id ?? l.target;
+    if (!adj.has(s)) adj.set(s, []);
+    adj.get(s).push(t);
+    if (!adj.has(t)) adj.set(t, []);
+    adj.get(t).push(s);
+  }
+  const now = Date.now();
+  for (const e of events) {
+    const kind = ACT_COLORS[e.kind] ? e.kind : 'read';
+    for (const id of e.ids || []) {
+      actFlash(id, kind, 1, now);
+      for (const nb of adj.get(id) || []) actFlash(nb, kind, ACT_SPREAD, now);
+    }
+  }
+  actPaint();
+}
+function actFlash(id, kind, w, t0) {
+  const cur = act.flashes.get(id);
+  if (cur && cur.w > w && t0 - cur.t0 < 400) return; // a neighbour spread must not downgrade a fresh direct hit
+  act.flashes.set(id, { kind, w, t0 });
+}
+function actAlpha(f) {
+  const p = 1 - (Date.now() - f.t0) / ACT_FADE_MS;
+  return p <= 0 ? 0 : f.w * p * p;
+}
+function actPaint() {
+  if (act.painting || !graph || state.mode !== '2d') return;
+  act.painting = true;
+  graph.autoPauseRedraw(false);
+  const step = () => {
+    const now = Date.now();
+    for (const [id, f] of act.flashes) if (now - f.t0 > ACT_FADE_MS) act.flashes.delete(id);
+    if (!act.flashes.size || !graph || state.mode !== '2d') {
+      if (graph && state.mode === '2d') graph.autoPauseRedraw(true);
+      act.painting = false;
+      return;
+    }
+    graph.autoPauseRedraw(false);   // re-assert: a remount mid-fade swaps in a paused instance
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function drawFlash2d(n, ctx) {
+  const f = act.flashes.get(n.id);
+  if (!f) return;
+  const a = actAlpha(f);
+  if (a <= 0.01) return;
+  const c = ACT_COLORS[f.kind];
+  const r0 = Math.sqrt(nodeVal(n)) * graph.nodeRelSize();
+  const r = r0 * (1.8 + 2.4 * a);
+  const g = ctx.createRadialGradient(n.x, n.y, r0 * 0.2, n.x, n.y, r);
+  g.addColorStop(0, hexAlpha(c, Math.min(0.9, a)));
+  g.addColorStop(1, hexAlpha(c, 0));
+  const prev = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(n.x, n.y, r, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.globalCompositeOperation = prev;
+}
+async function actPoll() {
+  if (document.visibilityState !== 'visible') return;
+  try {
+    const d = await api('/api/activity?since=' + act.since);
+    act.since = d.now;
+    // first response just sets the cursor — don't replay the historical tail
+    if (act.primed && state.mode === '2d') actApply(d.events);
+    act.primed = true;
+  } catch { /* server briefly gone; keep polling */ }
+}
+setInterval(actPoll, ACT_POLL_MS);
+
 // drop far-flung members so a hull hugs its dense core instead of sprawling
 function trimOutliers(pts) {
   if (pts.length < 5) return pts;
@@ -400,6 +494,26 @@ function makeGravityForce(strength) {
   return force;
 }
 
+// custom force: Obsidian-style "Center force" — a uniform spring-to-origin on EVERY node
+// (unlike makeGravityForce above, which only tethers disconnected satellites). The library's
+// own 'center' force just recenters the mean each tick and has no per-node restoring pull, so
+// without this, outliers drift to whatever radius charge repulsion settles at. Pulling toward
+// the origin (not a computed centroid) is equivalent once 'center' has recentered the mean there.
+function makeCenterForce(strength) {
+  let nodes = [];
+  function force(alpha) {
+    if (!strength) return;   // strength 0 = slider off
+    const k = alpha * strength;
+    for (const n of nodes) {
+      n.vx -= n.x * k;
+      n.vy -= n.y * k;
+      if (n.z != null) n.vz -= n.z * k;
+    }
+  }
+  force.initialize = (n) => { nodes = n; };
+  return force;
+}
+
 // 2D drag freeze — while a node is dragged the lib writes its fx/x directly every move, so the
 // physics reheat it also hard-codes (d3AlphaTarget(.3).resetCountdown()) exists ONLY to drag
 // neighbours along. At 5k nodes one force tick costs 100-400ms (drag ≈ 11 FPS), so we null the
@@ -447,7 +561,7 @@ let _frozenForces = null;   // { g, forces: {name: force|null} } while frozen
 function freezeForces(g) {
   if (_frozenForces) return;
   const forces = {};
-  for (const k of ['charge', 'link', 'center', 'collide', 'cluster', 'gravity']) { forces[k] = g.d3Force(k) || null; g.d3Force(k, null); }
+  for (const k of ['charge', 'link', 'center', 'collide', 'cluster', 'gravity', 'centerforce']) { forces[k] = g.d3Force(k) || null; g.d3Force(k, null); }
   // zero residual velocities: absent forces d3 still integrates x += vx each tick, so a drag begun
   // mid-settle would leave the whole graph coasting for the frozen window
   for (const n of g.graphData().nodes) { n.vx = 0; n.vy = 0; if (n.vz !== undefined) n.vz = 0; }
@@ -477,6 +591,8 @@ function applyForces(g) {
   // disconnected-component tether (2D + 3D): reads state.satellites each tick (no-op when
   // empty), so it stays live across applyData() swaps that never re-run applyForces
   g.d3Force('gravity', makeGravityForce(s.gravity));
+  // Obsidian-style "Center force" (2D + 3D): off (0) by default — opt-in, unlike gravity above
+  g.d3Force('centerforce', makeCenterForce(s.centerForce));
 }
 
 // passed to Glow3d (3D topic orbs) — thin getters, no coupling to app internals
@@ -529,6 +645,7 @@ function linkColorFor(l) {
 }
 
 function renderGraph() {
+  if (state.mode === 'focus') { mountFocus(); return; }
   if (graph && mountedMode === state.mode) {
     applyData(viewData());
     return;
@@ -540,6 +657,7 @@ function renderGraph() {
   if (window.Warp) Warp.teardown();
   if (window.SpaceFx) SpaceFx.teardown();
   if (window.Instanced3d) Instanced3d.teardown();
+  if (window.Plex) Plex.unmount();
   if (graph && graph._destructor) graph._destructor();
   graphEl.innerHTML = '';
   const make = state.mode === '3d' ? ForceGraph3D : ForceGraph;
@@ -578,7 +696,8 @@ function renderGraph() {
   if (state.mode === '2d') {
     graph.onRenderFramePre(drawHulls);
     graph.onRenderFramePost(drawClusterLabels);
-    graph.nodeCanvasObjectMode(() => 'after').nodeCanvasObject(drawLabel2d);
+    graph.nodeCanvasObjectMode(() => 'after')
+         .nodeCanvasObject((n, ctx, scale) => { drawFlash2d(n, ctx); drawLabel2d(n, ctx, scale); });
     graph.onZoom(onPan2d);                       // link-LOD: hide edges while the view is moving
     state._panLOD = graph.graphData().links.length > 1500;   // only LOD dense graphs; small ones keep edges mid-pan
     // node drag, org-roam-ui/Obsidian-style (liveDrag): the sim stays LIVE for the gesture so
@@ -668,6 +787,72 @@ function renderGraph() {
   });
   state._needFit = true;
   mountedMode = state.mode;
+}
+
+// Focus (Plex): TheBrain-style single-focus tiered nav — separate render surface from
+// force-graph (no physics), so it tears down any prior 2D/3D instance itself.
+function mountFocus() {
+  if (window.Glow3d) Glow3d.teardown();
+  if (window.Starfield) Starfield.teardown();
+  if (window.AutoRotate) AutoRotate.teardown();
+  if (window.Bloom) Bloom.teardown();
+  if (window.Warp) Warp.teardown();
+  if (window.SpaceFx) SpaceFx.teardown();
+  if (window.Instanced3d) Instanced3d.teardown();
+  if (graph && graph._destructor) graph._destructor();
+  graph = null;
+  graphEl.innerHTML = '';
+  const ids = new Set(state.raw.nodes.map((n) => n.id));
+  // (re)seed history if empty, OR if the currently-active node vanished (deleted, or
+  // filtered out by a search/tag change) — a stale id would desync plexActive from what
+  // Plex actually renders (it falls back to nodes[0] internally) and linger in history.
+  const activeGone = state.plexHistory.length && !ids.has(state.plexHistory[state.plexIndex]);
+  if (!state.plexHistory.length || activeGone) {
+    const start = (state.selected && ids.has(state.selected))
+      ? state.selected : (state.raw.nodes[0] && state.raw.nodes[0].id) || null;
+    state.plexHistory = start ? [start] : [];
+    state.plexIndex = start ? 0 : -1;
+  }
+  state.plexActive = state.plexHistory[state.plexIndex] || null;
+  window.Plex.mount(graphEl, {
+    nodes: state.raw.nodes,
+    links: state.raw.links,
+    activeId: state.plexActive,
+    onRecenter: plexRecenter,
+    onSelect: (id) => selectNode(id, { center: false }),
+  });
+  updatePlexNav();
+  mountedMode = 'focus';
+}
+
+function plexRecenter(id) {
+  state.plexHistory = state.plexHistory.slice(0, state.plexIndex + 1);
+  state.plexHistory.push(id);
+  state.plexIndex = state.plexHistory.length - 1;
+  state.plexActive = id;
+  Plex.setActive(id);
+  updatePlexNav();
+}
+
+function plexBack() {
+  if (state.plexIndex <= 0) return;
+  state.plexIndex--;
+  state.plexActive = state.plexHistory[state.plexIndex];
+  Plex.setActive(state.plexActive);
+  updatePlexNav();
+}
+
+function plexForward() {
+  if (state.plexIndex >= state.plexHistory.length - 1) return;
+  state.plexIndex++;
+  state.plexActive = state.plexHistory[state.plexIndex];
+  Plex.setActive(state.plexActive);
+  updatePlexNav();
+}
+
+function updatePlexNav() {
+  $('#plex-back').disabled = state.plexIndex <= 0;
+  $('#plex-forward').disabled = state.plexIndex >= state.plexHistory.length - 1;
 }
 
 // swap in new graph data while PRESERVING existing nodes' layout positions by id. viewData()
@@ -886,7 +1071,7 @@ function renderSidebar(node, nb) {
     ${ment.unlinked.length ? `<h3><span>unlinked mentions</span><span class="scount">${String(ment.unlinked.length).padStart(2, '0')}</span></h3><ul class="mentions">${ment.unlinked.map((n) =>
       mentionRow(n, true)).join('')}${ment.unlinkedMore ? `<li class="mention-more mono dim">+${ment.unlinkedMore} more</li>` : ''}</ul>` : ''}
     <div class="actions">
-      <button id="sb-focus">${state.focusRoots.size ? 'Spread here' : 'Focus'}</button>
+      ${state.mode === 'focus' ? '' : `<button id="sb-focus">${state.focusRoots.size ? 'Spread here' : 'Focus'}</button>`}
       <button id="sb-edit">Edit</button>
       <button id="sb-link">Link to…</button>
       <button id="sb-delete" class="danger">Delete</button>
@@ -920,11 +1105,13 @@ function renderSidebar(node, nb) {
   setTimeout(unscan, 2500); // backstop (reduced-motion fires no animationend)
 
   $('#sb-close').onclick = closeSidebar;
-  $('#sb-focus').onclick = () => {
-    if (state.focusRoots.size) spreadFocus(node.id);
-    else setFocus(node.id);
-    $('#sb-focus').textContent = 'Spread here';
-  };
+  if (state.mode !== 'focus') {
+    $('#sb-focus').onclick = () => {
+      if (state.focusRoots.size) spreadFocus(node.id);
+      else setFocus(node.id);
+      $('#sb-focus').textContent = 'Spread here';
+    };
+  }
   $('#sb-edit').onclick = () => {
     $('#edit-form').classList.toggle('hidden');
     $('#link-form').classList.add('hidden');
@@ -1007,7 +1194,9 @@ sidebar.addEventListener('click', async (e) => {
   if (!t || !t.dataset.node) return;
   const id = t.dataset.node;
   if (!(await selectNode(id))) return; // unresolved wiki-link slug — don't focus
-  if (state.focusRoots.size) spreadFocus(id);
+  // Focus mode has no org-roam focusRoots concept — any node reference recenters Plex instead
+  if (state.mode === 'focus') plexRecenter(id);
+  else if (state.focusRoots.size) spreadFocus(id);
   else setFocus(id);
 });
 
@@ -1070,14 +1259,25 @@ chipsEl.addEventListener('click', (e) => {
 
 function setMode(mode) {
   if (state.mode === mode) return;
+  const prevMode = state.mode;
   state.mode = mode;
   $('#mode-2d').classList.toggle('active', mode === '2d');
   $('#mode-3d').classList.toggle('active', mode === '3d');
+  $('#mode-focus').classList.toggle('active', mode === 'focus');
   $('#autorotate-toggle').classList.toggle('hidden', mode !== '3d');
+  $('#plex-nav').classList.toggle('hidden', mode !== 'focus');
+  // org-roam focus-reset button is meaningless in Focus mode (no focusRoots concept there)
+  $('#focus-reset').classList.toggle('hidden', mode === 'focus' || !state.focusRoots.size);
+  // sb-focus (Focus/Spread here) only exists outside Focus mode — the sidebar's DOM would
+  // otherwise go stale showing/hiding that button across a Focus<->2D/3D transition.
+  if (state.selected && (mode === 'focus' || prevMode === 'focus')) closeSidebar();
   renderGraph(); // re-mount, same data + focus state
 }
 $('#mode-2d').onclick = () => setMode('2d');
 $('#mode-3d').onclick = () => setMode('3d');
+$('#mode-focus').onclick = () => setMode('focus');
+$('#plex-back').onclick = plexBack;
+$('#plex-forward').onclick = plexForward;
 $('#autorotate-toggle').onclick = () => {
   state.settings.autoRotate = !state.settings.autoRotate;
   $('#autorotate-toggle').classList.toggle('active', state.settings.autoRotate);
@@ -1229,6 +1429,7 @@ const RANGES = [
   ['Link distance', 'linkDist', 10, 120, 1, 'physics'],
   ['Link strength', 'linkStrength', 0, 1, 0.05, 'physics'],
   ['Gravity', 'gravity', 0, 0.3, 0.01, 'physics'],
+  ['Center force', 'centerForce', 0, 0.3, 0.01, 'physics'],
   ['Link opacity', 'linkOpacity', 0, 1, 0.05, 'visual'],
 ];
 const TOGGLES = [

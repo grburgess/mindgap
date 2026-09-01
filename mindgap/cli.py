@@ -1,4 +1,4 @@
-"""Mindgap CLI."""
+"""mindgap CLI. See docs/superpowers/specs/2026-06-12-mindmap-design.md."""
 import argparse
 import json
 import sys
@@ -223,6 +223,41 @@ def cmd_serve(args):
     run(args.port, not args.no_open)
 
 
+def migrate(legacy=None) -> int:
+    """Copy a legacy repo data/ DB + snapshots into ~/.mindgap. Idempotent; copy, not move.
+    Returns the number of files copied."""
+    import shutil
+    from pathlib import Path
+    legacy = legacy or config.legacy_data_dir()
+    if not (legacy / "mindmap.db").exists():
+        cwd_legacy = Path.cwd() / "data"  # pip/pipx users running install.sh from inside a clone
+        if (cwd_legacy / "mindmap.db").exists():
+            legacy = cwd_legacy
+    copied = 0
+    legacy_names = ("mindmap.db", "mindgap.db")
+    src_db = next((legacy / n for n in legacy_names if (legacy / n).exists()), legacy / "mindmap.db")
+    dst_db = config.db_path()
+    if src_db.exists() and not dst_db.exists():
+        for suffix in ("", "-wal", "-shm"):
+            s = src_db.with_name(src_db.name + suffix)
+            if s.exists():
+                shutil.copy2(s, dst_db.with_name(dst_db.name + suffix)); copied += 1
+    src_snaps = legacy / "snapshots"
+    if src_snaps.is_dir():
+        dst_snaps = config.snapshots_dir()
+        for f in src_snaps.glob("*.json"):
+            d = dst_snaps / f.name
+            if not d.exists():
+                shutil.copy2(f, d); copied += 1
+    return copied
+
+
+def cmd_migrate(args):
+    n = migrate()
+    print(f"migrated {n} file(s) into {config.data_dir()}" if n
+          else f"nothing to migrate (db at {config.db_path()} already present or no legacy data/)")
+
+
 def init_db(force=False) -> int:
     """Create the schema (db.connect) and seed from the packaged seed.json if empty.
     Returns the number of nodes seeded (0 if the db already had nodes and not force)."""
@@ -389,13 +424,14 @@ def main(argv=None):
     p = sub.add_parser("mine", help="analytic mining: enrich / learn / connect")
     msub = p.add_subparsers(dest="mine_cmd", required=True)
     me = msub.add_parser("enrich", help="RWR-ranked relevant subgraph for a seed")
-    me.add_argument("seed"); me.add_argument("--k", type=int, default=12)
+    me.add_argument("seed")
+    me.add_argument("--k", type=int, default=12)
     me.add_argument("--json", action="store_true")
     ml = msub.add_parser("learn", help="ranked learning frontier + frontier.json for loops")
     ml.add_argument("--top", type=int, default=20)
     ml.add_argument("--no-emit", action="store_true")
     ml.add_argument("--json", action="store_true")
-    mc = msub.add_parser("connect", help="latent-link suggestions (read-only) or --apply decisions")
+    mc = msub.add_parser("connect", help="latent-link suggestions (read-only)")
     mc.add_argument("--k", type=int, default=15)
     mc.add_argument("--apply", help="path to a pre-adjudicated decisions.json to commit")
     p.set_defaults(func=cmd_mine)
@@ -404,6 +440,9 @@ def main(argv=None):
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--no-open", action="store_true")
     p.set_defaults(func=cmd_serve)
+
+    p = sub.add_parser("migrate", help="copy legacy repo data/ DB+snapshots into ~/.mindgap (one-time)")
+    p.set_defaults(func=cmd_migrate)
 
     p = sub.add_parser("init", help="create ~/.mindgap DB and seed it from the bundled seed.json")
     p.add_argument("--force", action="store_true", help="re-seed even if the db already has nodes")

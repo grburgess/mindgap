@@ -17,11 +17,11 @@ PASS requires ALL checks below to hold.
    used for at most one highlighted element per figure.
 5. **motion-meaningful** — each animation conveys a step or relationship (not decoration) and
    has a `prefers-reduced-motion` fallback pinned to a legible final state.
-6. **graph-grounded** — every "Connected ideas" link points at a real mindgap node (resolved by
-   id/URL). The orchestrator resolves these mechanically before accepting PASS; the verifier
-   flags any that look fabricated.
-7. **voice** — clear explanatory prose: opens with a fact/tension, concedes limits, leads
-   callouts with the problem then the fix. No marketing tone; no unsupported superlatives.
+6. **graph-grounded** — every "Connected" link points at a real mindmap node or
+   Confluence page. (The orchestrator resolves these mechanically before accepting PASS;
+   the verifier flags any that look fabricated.)
+7. **voice** — prose follows burgess_voice: opens with a fact/tension, concedes limits,
+   leads callouts with the problem then the fix.
 8. **toolkit-breadth** — ≥3 animated figures spanning ≥2 of the four techniques
    (animated SVG/CSS · annotated paper figure · generated video · interactive widget).
 
@@ -40,5 +40,5 @@ Direct user feedback outranks the ≥2× heuristic — promote it on first occur
   must offer hover interactivity on more than plain text: ≥4 glossary `ref()` popovers AND
   hover responses on figures / diagram parts / data marks (highlight or value tooltip).
 - **6a · links from ground truth** (2026-06-16) — every external URL must come from a resolved
-  source (a mindgap node's `urls`, or the paper's own references). Reconstructed arXiv ids are a
-  faithfulness failure even when the link happens to resolve.
+  source (mindmap node `urls`, Confluence search hit, or the paper's references). Reconstructed
+  arXiv ids are a faithfulness failure even when the link happens to resolve.

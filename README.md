@@ -50,7 +50,7 @@ Pick one. All paths put `mindgap` (and `mindgap-mcp`) on your PATH and store dat
 ### Claude Code plugin (skills + MCP)
     /plugin marketplace add grburgess/mindgap
     /plugin install mindgap
-Registers the `mindgap` MCP server and the `paper-to-mindmap`, `arxiv-explainer`, `papers-library`, and `loop-system` skills.
+Registers the `mindgap` MCP server and eleven skills: `arxiv-explainer`, `deep-research`, `idea-court`, `inbox-to-mindmap`, `knowledge-capture`, `loop-distill`, `loop-system`, `paper-to-mindmap`, `papers-library`, `second-brain`, and `todo-mindmap`.
 Register the MCP at **user scope** so every Claude Code session, in any directory, can reach the graph:
 
     claude mcp add -s user mindgap mindgap-mcp   # global; needs mindgap-mcp on PATH
@@ -60,6 +60,40 @@ Register the MCP at **user scope** so every Claude Code session, in any director
 ### Where data lives
 `~/.mindgap/` — `mindgap.db` and `snapshots/`. `MINDGAP_HOME` relocates the whole dir;
 `MINDGAP_DB` points at a single DB file elsewhere.
+
+### Where learning state lives
+
+Self-learning skills keep their ledgers in `$MINDGAP_HOME/learning/<skill>/`
+(default `~/.mindgap/learning/<skill>/`), outside the install. The directory is
+created on demand — the first loop session seeds each file from the skill's
+`templates/*.stub.md`, so a fresh install needs no setup, and upgrades never
+touch it.
+
+These files are personal state: **never** commit, push, or sync them. To move
+them to another computer, copy by hand:
+
+    rsync -av ~/.mindgap/learning/ 'newmachine:${MINDGAP_HOME:-$HOME/.mindgap}/learning/'
+
+### Existing users (skill state used to live in skill dirs)
+
+This is not hypothetical. Before this release, `loop-system` appended its ledgers
+**inside the plugin directory** (`skills/loop-system/references/{lessons,global-learnings}.md`),
+where `/plugin install` overwrites them — so updating the plugin silently destroys
+them. If you have run loops on an earlier version, rescue them once, before
+updating:
+
+    PLUGIN_DIR=~/.claude/plugins/mindgap        # wherever /plugin install put it
+    DEST="${MINDGAP_HOME:-$HOME/.mindgap}"/learning/loop-system
+    mkdir -p "$DEST"
+    for f in lessons global-learnings; do
+      SRC="$PLUGIN_DIR/skills/loop-system/references/$f.md"
+      if [ -e "$SRC" ]; then mv "$SRC" "$DEST"/; fi
+    done
+
+Either file may be absent — the loop moves what you have and stays quiet about the
+rest, so it is safe to run before you know which ledgers exist, and safe to run twice.
+
+After this the plugin directory holds only code, so updates are safe.
 
 ## Give an agent a goal
 

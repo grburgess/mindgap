@@ -1,8 +1,17 @@
 """Path config: PACKAGE assets (ship with code) vs USER DATA (per-user, outside repo).
 
-PACKAGE assets (inside the mindgap/ package): web_dir(), seed_path(), loops_dir().
-USER DATA (~/.mindgap, created on demand): data_dir(), db_path(), snapshots_dir().
-Env: MINDGAP_HOME (whole data dir) > ~/.mindgap; MINDGAP_DB overrides the db file.
+PACKAGE assets live inside the mindgap/ package dir, resolved from this file:
+    PKG_DIR           the mindgap/ package directory
+    web_dir()         -> mindgap/web
+    seed_path()       -> mindgap/seed.json
+    loops_dir()       -> mindgap/loops
+
+USER DATA is per-user, outside the repo, created on demand:
+    data_dir()        $MINDGAP_HOME if set, else ~/.mindgap
+    db_path()         $MINDGAP_DB if set, else <data_dir>/mindgap.db
+    snapshots_dir()   <data_dir>/snapshots
+
+Migration source: legacy_data_dir() = the old repo data/ (file still named mindmap.db).
 """
 import os
 from pathlib import Path
@@ -20,6 +29,11 @@ def seed_path() -> Path:
 
 def loops_dir() -> Path:
     return PKG_DIR / "loops"
+
+
+def legacy_data_dir() -> Path:
+    """Where a pre-relocation source checkout kept its DB (repo-root data/)."""
+    return PKG_DIR.parent / "data"
 
 
 def data_dir() -> Path:
@@ -42,3 +56,7 @@ def snapshots_dir() -> Path:
 
 def frontier_path() -> Path:
     return data_dir() / "frontier.json"
+
+
+def activity_path() -> Path:
+    return data_dir() / "activity.jsonl"

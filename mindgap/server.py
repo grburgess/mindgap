@@ -1,12 +1,13 @@
 """HTTP server: JSON API over db + static files from web/."""
 import json
 import mimetypes
+import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import config, db
+from . import activity, config, db
 
 WEB_DIR = config.web_dir()
 
@@ -57,6 +58,11 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(db.search(conn, q=q("q", ""), type=q("type"), tag=q("tag"), tag_mode="contains"))
                 elif path == "/api/stats":
                     self._json(db.stats(conn))
+                elif path == "/api/activity":
+                    # live 'neurons firing' feed: events with ts > since (epoch ms);
+                    # 'now' lets the client advance its cursor without clock games
+                    self._json({"events": activity.tail(int(q("since", "0") or 0)),
+                                "now": int(time.time() * 1000)})
                 else:
                     self._json({"error": "not found"}, 404)
             self._handle(handle)
@@ -85,6 +91,12 @@ class Handler(BaseHTTPRequestHandler):
                                 rel=payload.get("rel", "relates_to"),
                                 weight=payload.get("weight", 1.0), created_by="ui")
                     conn.commit()
+                    self._json({"ok": True})
+                elif path == "/api/activity":
+                    # external injector (Neural Vault-style hook parity): curl a touch
+                    # event in from anything that isn't the MCP server
+                    activity.record(payload.get("kind", "read"), payload.get("ids") or [],
+                                    actor=payload.get("actor", "hook"))
                     self._json({"ok": True})
                 else:
                     self._json({"error": "not found"}, 404)

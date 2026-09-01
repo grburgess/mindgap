@@ -2,14 +2,20 @@
 
 ## Decision rule
 
-**≥3 independent work items OR parallel experiments, AND the project
-is a git repo → Dynamic Workflow. Else → subagent loop.** When unsure,
-subagent loop — it's debuggable and cheap to upgrade later.
+**Dynamic Workflow is the DEFAULT engine.** Fall back to Shape 1 subagent
+loop only for (a) a single artifact refined in place (N=1, no
+parallelism), or (b) a runtime with no workflow engine. Workflow-first
+matches how these loops actually run — fan-out makers with per-item
+verification — and its budget governor is the natural within-session
+autonomy control.
 
 Capability check (at INIT engine choice): if the runtime exposes no
-workflow engine and no isolation option on the subagent tool, choose
-subagent loop and achieve isolation manually — `git worktree add` per
-maker in a git repo, or sequential makers otherwise.
+workflow engine and no isolation option on the subagent tool, use Shape 1
+and achieve isolation manually — `git worktree add` per maker in a git
+repo, or sequential makers otherwise.
+
+Non-git project → no worktrees → no parallel makers → run sequentially
+(Shape 1 mechanics, or single-lane workflow phases with no `isolation`).
 
 ## Shape 1 · Subagent loop (default)
 
@@ -82,11 +88,15 @@ never converges.
   verifier-protocol.md).
 - Every verdict logs one STATE.md line before the next iteration starts.
 - Non-git project: no worktrees → no parallel makers → Shape 1 only.
+- Extra/auto sessions of an already-complete or resumed loop: re-scan
+  current ground truth (id/title/path sweep on the focus keywords) before
+  dispatching makers — a prior-session proposed focus can be stale
+  (lessons.md 2026-07-01). Re-scope if the gap has closed or collided.
 
 ## Maker tooling notes
 
 - Web-discovery makers: `WebSearch` was reported to error from inside
-  subagents across two paper-discovery sessions (cause unconfirmed —
+  subagents across two research-discovery sessions (cause unconfirmed —
   could be transient or sandbox). The verified-reliable fallback for
   academic-paper discovery is the arXiv export API via WebFetch:
   `http://export.arxiv.org/api/query?search_query=all:<terms>&max_results=N`

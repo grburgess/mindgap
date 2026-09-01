@@ -2,8 +2,8 @@
 
 The SessionEnd hook (capture_hook.py) uses these to decide cheaply whether to
 spawn the headless capture subagent. The domain (what counts as on-topic) is
-config, so this engine is domain-agnostic; mindgap ships a disabled-by-default
-capture.json with an empty domain as package data.
+config, so this engine is domain-agnostic; the package ships a domain preset
+capture.json as package data.
 """
 import copy
 import json
@@ -20,12 +20,13 @@ DEFAULTS = {
     "min_transcript_bytes": 2000,
     "capture": {"model": "claude-haiku-4-5", "timeout_s": 180,
                 "max_nodes_per_session": 15, "default_confidence": 0.6},
+    "recall": {"enabled": True, "max_nodes": 12, "max_global": 5},
     "lint": {"stale_days": 60, "stale_below_confidence": 0.7},
 }
 
 
 def preset_path() -> Path:
-    """Packaged domain preset shipped with the code (disabled, empty domain)."""
+    """Packaged domain preset shipped with the code as package data."""
     return config.PKG_DIR / "capture.json"
 
 

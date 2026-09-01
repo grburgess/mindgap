@@ -6,7 +6,7 @@ Status: design (awaiting user review)
 ## Goal
 
 Import the user's ReadCube Papers library into the **`mindgap`** knowledge graph
-(separate from cape — zero cape access) and link it to the user's `grburgess`
+(separate from the private upstream — zero upstream access) and link it to the user's `grburgess`
 GitHub repos, producing a densely-connected, idempotent, reversible graph.
 
 Success criteria:
@@ -126,7 +126,7 @@ papers 0.9 · topics 0.9 · repos 0.95 · auto repo↔paper 0.95 · semantic lin
 
 ## Risks / constraints
 
-- **Strictly `mindgap`** MCP/CLI + the ReadCube file. **No cape access of any kind.**
+- **Strictly `mindgap`** MCP/CLI + the ReadCube file. **No upstream access of any kind.**
 - 184 repo nodes is broad (per user's choice); trivially reducible to research-only
   by filtering the repo set if it reads as noisy.
 - Graph size (~2,400 nodes / ~3,900 edges): fine for SQLite; the force-graph web UI
@@ -138,8 +138,8 @@ papers 0.9 · topics 0.9 · repos 0.95 · auto repo↔paper 0.95 · semantic lin
 ## Out of scope
 
 Full mirror (3,024) · flat/no-taxonomy import · PDFs & full text · collaborator
-author nodes · smartlists · unlisted long-tail papers · anything in cape /
-`~/projects/mindmap`.
+author nodes · smartlists · unlisted long-tail papers · anything in the private
+upstream checkout.
 
 ## Open questions
 

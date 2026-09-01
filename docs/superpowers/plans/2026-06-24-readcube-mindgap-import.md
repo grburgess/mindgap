@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Strictly `mindgap`** (MCP/CLI/`mindgap.db`) + the ReadCube file + `gh`. **ZERO cape access** (no `cape_mindmap` tools, no `~/projects/mindmap`).
+- **Strictly `mindgap`** (MCP/CLI/`mindgap.db`) + the ReadCube file + `gh`. **ZERO upstream access** (no private-repo tooling, no upstream checkout).
 - Source DB opened **read-only + immutable**: `sqlite3.connect("file:<path>?mode=ro&immutable=1", uri=True)`. Never write the ReadCube file.
 - Stdlib only — no pip deps (matches mindgap + `parse_refs.py`).
 - `created_by = "skill:papers-library"` on every node and edge. Tag every imported node `papers-library`.
@@ -803,7 +803,7 @@ gh pr create --fill --base main
 - Reversible / `created_by` → `CREATED_BY` constant everywhere. ✓
 - Repos: all 184 source + threeML flagships → Task 3 `fetch_repos` + `ORG_FLAGSHIPS`. ✓
 - Aggressive-semantic linking, 5 domains → Task 6 subagents + validation. ✓
-- Read-only/immutable source; no cape → `open_ro`; Global Constraints. ✓
+- Read-only/immutable source; no upstream → `open_ro`; Global Constraints. ✓
 - Implements the `papers-library` skill → scripts in skill dir, `created_by="skill:papers-library"`, SKILL.md update (Task 7). ✓
 
 **Placeholder scan:** No TBD/TODO; every code step has full code; expected outputs given. ✓

@@ -8,15 +8,15 @@ Two interfaces, same db: the **CLI** (above) and the **MCP server** (`python3 -m
 
 1. Run `mindgap context "<topic>"` BEFORE researching a topic — read what exists, avoid duplicates, build on existing nodes.
 2. Write via `mindgap ingest -` with `created_by` = your loop name (e.g. `loop:confluence-scan`) on every node and edge.
-3. Every node sourced from Confluence/GitHub/arXiv MUST carry a `urls` entry (`{"label","url","kind"}`; kind: `confluence|github|arxiv|web`).
+3. Every node sourced from Confluence/GitHub/arXiv MUST carry a `urls` entry (`{"label","url","kind"}`; kind: `confluence|github|arxiv|jira|web`).
 4. Use `[[wiki-links]]` in bodies to densify the graph — each `[[node-id]]` auto-creates a `mentions` edge (stub node if target missing). Wiki-links MUST use the exact node id (check with `mindgap find`), not the title or a guessed slug — `[[maestro]]` is a dangling stub if the node is `repo-maestro`.
 5. Prefer upserting existing ids over creating near-duplicate new nodes — run `mindgap find` first (see below).
 6. Run `mindgap export` at session end (snapshot to `~/.mindgap/snapshots/`).
 
 ## Vocabularies
 
-- Node `type`: `concept | definition | software | repo | page | paper | person | team | stub`
-- Edge `rel`: `relates_to | defines | implements | depends_on | cites | part_of | mentions`
+- Node `type`: `concept | definition | software | repo | page | paper | person | team | design | feature | learning | jira-ticket | todo | stub`
+- Edge `rel`: `relates_to | defines | implements | depends_on | cites | part_of | mentions | assigned_to | reported_by | resolved_by`
 
 ## Near-duplicate check
 

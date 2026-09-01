@@ -4,6 +4,7 @@ from pathlib import Path
 
 SKILL = (Path(__file__).resolve().parents[1]
          / "mindgap-plugin/skills/second-brain/SKILL.md")
+MINING = SKILL.parent / "references/mining.md"
 
 
 class SecondBrainSkillTest(unittest.TestCase):
@@ -12,6 +13,12 @@ class SecondBrainSkillTest(unittest.TestCase):
         self.assertTrue(text.startswith("---"))
         self.assertIn("name: second-brain", text)
         self.assertIn("description:", text)
-        for needed in ("enrich", "learn", "connect", "mine:connect",
-                       "mindgap_ingest", "AGENTS.md", "nameable"):
+        for needed in ("enrich", "learn", "connect", "AGENTS.md"):
+            self.assertIn(needed, text)
+
+    def test_mining_reference_carries_writeback_protocol(self):
+        # SKILL.md delegates mining detail to references/mining.md; the
+        # write-back provenance and gating live there, not in the skill body.
+        text = MINING.read_text()
+        for needed in ("mine:connect", "mindgap_ingest", "nameable"):
             self.assertIn(needed, text)

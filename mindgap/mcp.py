@@ -2,7 +2,8 @@
 
 Sibling of server.py (HTTP API) — same db layer, agent-native front-end via
 newline-delimited JSON-RPC 2.0 on stdin/stdout. NO pip deps (json + sys only).
-Launched as `python3 -m mindgap.mcp`.
+Launched as `python3 -m mindgap.mcp`. See
+docs/superpowers/specs/2026-06-15-mindmap-mcp.md.
 """
 import json
 import sys
@@ -21,11 +22,18 @@ INSTRUCTIONS = (
 )
 
 # AGENTS vocabularies (convention, not enforced — soft warn only).
+# Keep in sync with AGENTS.md §Vocabularies: a validator that flags the very
+# terms the protocol prescribes teaches callers to ignore its warnings.
 TYPES = {"concept", "definition", "software", "repo", "page", "paper", "person",
-         "team", "stub"}
+         "team", "design", "feature", "learning", "jira-ticket", "todo", "stub"}
 RELS = {"relates_to", "defines", "implements", "depends_on", "cites", "part_of",
-        "mentions"}
-PROVENANCE_HINT = "created_by should be 'loop:<name>', 'manual', or 'mcp' (AGENTS rule 2)"
+        "mentions", "assigned_to", "reported_by", "resolved_by"}
+# Recognised provenance forms: loop sessions, skills, the SessionEnd capture
+# hook (created_by=capture:<repo>), and hand/tool writes.
+PROVENANCE_PREFIXES = ("loop:", "skill:", "capture:")
+PROVENANCE_LITERALS = ("manual", "mcp")
+PROVENANCE_HINT = ("created_by should be 'loop:<name>', 'skill:<name>', "
+                   "'capture:<repo>', 'manual', or 'mcp' (AGENTS rule 2)")
 
 
 class ToolError(Exception):
@@ -61,7 +69,7 @@ def _require_created_by(args):
 
 
 def _provenance_warnings(created_by, warnings):
-    if created_by != "manual" and created_by != "mcp" and not created_by.startswith("loop:"):
+    if created_by not in PROVENANCE_LITERALS and not created_by.startswith(PROVENANCE_PREFIXES):
         warnings.append(PROVENANCE_HINT)
 
 
@@ -308,25 +316,8 @@ def tool_context(conn, args):
                 elif dst == node["id"]:
                     lines.append(f"- {link['rel']} <- {src} ({titles.get(src, src)})")
         lines.append("")
-    return {"markdown": "\n".join(lines), "matched": len(nodes)}
-
-
-def tool_mine_enrich(conn, args):
-    from . import mine
-    seed = args.get("seed")
-    if not isinstance(seed, str) or not seed:
-        raise ToolError("seed is required")
-    return mine.enrich(conn, seed, k=args.get("k", 12))
-
-
-def tool_mine_learn(conn, args):
-    from . import mine
-    return mine.learn(conn, top=args.get("top", 20), emit=args.get("emit", True))
-
-
-def tool_mine_connect(conn, args):
-    from . import mine
-    return mine.connect_candidates(conn, k=args.get("k", 15))
+    return {"markdown": "\n".join(lines), "matched": len(nodes),
+            "ids": [n["id"] for n in nodes]}
 
 
 def tool_stats(conn, args):
@@ -353,6 +344,24 @@ def tool_export(conn, args):
         json.dump(payload, f, indent=2)
     return {"path": out,
             "counts": {"nodes": len(payload["nodes"]), "edges": len(payload["edges"])}}
+
+
+def tool_mine_enrich(conn, args):
+    from . import mine
+    seed = args.get("seed")
+    if not isinstance(seed, str) or not seed:
+        raise ToolError("seed is required")
+    return mine.enrich(conn, seed, k=args.get("k", 12))
+
+
+def tool_mine_learn(conn, args):
+    from . import mine
+    return mine.learn(conn, top=args.get("top", 20), emit=args.get("emit", True))
+
+
+def tool_mine_connect(conn, args):
+    from . import mine
+    return mine.connect_candidates(conn, k=args.get("k", 15))
 
 
 def tool_remove_node(conn, args):
@@ -507,7 +516,8 @@ TOOLS = [
         "handler": tool_mine_enrich,
         "inputSchema": _schema(
             {"seed": _STR, "k": {"type": "integer", "minimum": 1, "maximum": 50}},
-            required=["seed"]),
+            required=["seed"],
+        ),
     },
     {
         "name": "mindgap_mine_learn",
@@ -531,6 +541,29 @@ TOOLS = [
 ]
 
 _BY_NAME = {t["name"]: t for t in TOOLS}
+
+# Activity feed (web 'neurons firing' view): after a successful tools/call,
+# map tool -> (read|write, touched node ids) and append to the feed. One place,
+# no handler edits; extraction works off the tool's own args/result.
+_ACTIVITY = {
+    "mindgap_ingest": ("write", lambda a, v: [n["id"] for n in v["nodes"] if n] + v["stubs_created"]),
+    "mindgap_add_node": ("write", lambda a, v: [v["id"]] + v["stubs_created"]),
+    "mindgap_link": ("write", lambda a, v: [v["edge"]["src"], v["edge"]["dst"]]),
+    "mindgap_get_node": ("read", lambda a, v: [v["node"]["id"]] if v.get("node") else []),
+    "mindgap_find": ("read", lambda a, v: [r["id"] for r in v["results"]]),
+    "mindgap_context": ("read", lambda a, v: v["ids"]),
+}
+
+
+def _record_activity(name, arguments, value):
+    spec = _ACTIVITY.get(name)
+    if spec is None:
+        return
+    try:
+        from . import activity
+        activity.record(spec[0], spec[1](arguments, value), actor="mcp")
+    except Exception:
+        pass   # feed is eye-candy; never fail the tool call over it
 
 
 def _tools_listing():
@@ -589,6 +622,7 @@ def dispatch(msg, conn):
             # error (isError result), never a JSON-RPC protocol error. -32603 is
             # reserved for framework faults outside handler execution (main loop).
             return _result(mid, _tool_result(f"{type(e).__name__}: {e}", True))
+        _record_activity(name, arguments, value)
         return _result(mid, _tool_result(json.dumps(value), False))
 
     return _error(mid, -32601, f"method not found: {method}")

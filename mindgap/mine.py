@@ -1,7 +1,8 @@
+# mindgap/mine.py
 """Orchestration layer for the second-brain mining modes. Resolves seeds,
 writes the frontier file, and performs gated write-back via db.ingest. The
 graph math lives in analyze.py (pure); all IO lives here. See
-docs/superpowers/specs/second-brain-mining.md.
+docs/superpowers/specs/2026-06-25-second-brain-mining-design.md.
 """
 import json
 
