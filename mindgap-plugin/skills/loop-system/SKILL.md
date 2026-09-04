@@ -128,8 +128,11 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
    goal's keywords plus tag `global-learning` — instead of relying on a
    full-file skim as the file grows (query protocol:
    $MINDGAP_HOME/learning/loop-system/global-learnings.md § Mindmap mirror). Read GOAL.md and
-   STATE.md fully (including § Auto mode). Read everything STATE.md lists
-   under `## Consult`.
+   STATE.md fully (including § Auto mode) — with ONE exception: skip
+   `## Superseded`, which holds retracted lines kept only for provenance.
+   Reading it back would re-inject the false premises SESSION END step 1 just
+   removed, which is the whole reason they were moved rather than left in
+   place. Read everything STATE.md lists under `## Consult`.
    ALSO read `<project>/.claude/PROJECT-LEARNINGS.md` when present — the
    project layer sits between global learnings and this loop's STATE, and
    carries cross-loop facts, rules, and the loop-system notes for this
@@ -172,6 +175,19 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
      <date>`; otherwise `running`), write it, and note the migration to
      the user. Without this, every pre-existing loop is flagged `unclosed`
      by `loop-distill` until its next SESSION END writes the field.
+   - **Memory-ladder migration:** STATE's ladder comment has no downward
+     move (no mention of retraction/`## Superseded`) → this loop predates
+     SESSION END step 1's retraction rule. Update the ladder comment and the
+     `Verified facts` header comment from templates/STATE.md, and append an
+     empty `## Superseded` section at the end. Then, WITHOUT deleting
+     anything, read `Verified facts` once and list any pair that looks
+     mutually exclusive — applying step 1's non-contradiction list, so a
+     baseline beside the result that quotes it is NOT reported. Show the user
+     the migration plus that list and wait for confirmation before retiring
+     anything. A pre-existing loop can carry years of accumulated
+     contradictions, so the first pass after migration is a review, never an
+     unattended sweep — the one time the retraction rule runs against a
+     backlog rather than a single new fact.
 4. If `<project>/.claude/settings.local.json` has no allow-list for
    the loop's commands, offer to add one (INIT step 5) — prompts stall
    unattended sessions.
@@ -269,6 +285,48 @@ GOAL.md `Max sessions before forced escalation` → forced escalation.
    Then promote memory —
    open failure → investigated → verifier-confirmed → `Verified facts`
    (with method + date); pattern seen ≥2× → `General rules`.
+   - **Retract superseded facts (the ladder's only downward move).**
+     `Verified facts` is current state, not a history: RESUME reads it whole
+     every session, so a line a later finding falsified is a false premise
+     re-injected into every remaining session (SKILL.state, arXiv:2608.26263 —
+     history-based runtimes burn 5–8 turns re-deriving reality after silent
+     drift; state-based ones need 0).
+     **Two facts contradict only when both cannot be true NOW, of the same
+     thing, at the same scope and version.** The following are NOT
+     contradictions — never retract on them:
+     - a baseline and the result measured against it, especially when the new
+       fact quotes the old one's number as its own before-value ("1.5 → 59.9
+       FPS" needs the 1.5 to mean anything);
+     - a scope-split (2D vs 3D), a version-split (v1 vs v2), a general rule
+       beside its special case, or a still-true causal diagnosis sitting beside
+       the fix it drove.
+
+     **When unsure — and unsure is the default — KEEP BOTH**, add a scope or
+     date qualifier, and flag the pair for the next structure pass. Deletion is
+     irreversible and runs unattended; the same paper's error taxonomy (§5.7)
+     finds premature state overwrite/deletion is 68% of a weaker model's errors
+     inside a state-mutating runtime — and that runtime had a schema validator
+     and a rollback-retry cycle this substrate does not.
+
+     **When certain:** delete the old line in the same edit that writes its
+     replacement, and carry the deleted line's VERBATIM text into that
+     iteration's `Iteration log` entry (a bare "superseded a fact" leaves the
+     content in git alone — outside this loop's own memory and outside
+     `loop-distill`'s reach). Several retractions in one iteration get one
+     indented continuation line each; that is the one licensed exception to
+     one-line-per-iteration.
+
+     **Recoverability gate:** delete only if the loop directory is git-tracked
+     AND committed. Otherwise — three loop dirs in this repo are untracked, and
+     tracked ones run uncommitted across sessions — MOVE the line under a
+     `## Superseded` heading below `Verified facts` instead. Same context
+     hygiene, nothing destroyed. Name every retraction in the session's
+     `## Memory check` line, so an unattended bad delete surfaces without
+     anyone reading a git diff.
+
+     Same rules for `General rules` and `Routing overrides`. Never annotate the
+     loser in place ("~~old~~ / now X") when you are certain — a reader still
+     has to adjudicate two claims.
    - **Auto-mode bookkeeping:** update STATE § Auto mode — `status`,
      `budget spent` (cumulative iterations) vs the §4 ceiling,
      `last wakeup`, `halt reason`; set `session-in-progress: no`.
