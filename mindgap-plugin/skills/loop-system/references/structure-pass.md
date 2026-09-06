@@ -91,44 +91,50 @@ files to read — read-heavy panels autocompact-thrash, global-learnings.md
      pass leaves the row untouched and queues the proposal. It never
      self-declines.
 
-6. **Re-qualify promoted skill rules (the removal half).** Promotion is
-   otherwise a one-way ratchet: rows retire on usage, the `loop-distill`
-   CLAUDE.md block is re-qualified every distill, but a rule that reached a
-   SKILL is never looked at again. Both source papers close this loop —
-   WikiSkill rolls a skill back when it stops earning its place; the gate is
-   its removal trigger, and this system declined that gate
-   (arXiv:2608.27454, and see the decision record) without substituting one.
-   These are the triggers this substrate actually has, none needing a score.
+6. **NOMINATE skill-rule changes — never decide them.** This pass does not
+   create, edit, or remove a skill. It emits a nomination and stops;
+   `loop-distill` decides and writes, under its phase-5 skills gate. Two
+   reasons, both structural: this pass reads only THIS loop's rows, while a
+   skill is loaded by every project, and this pass has no verifier of any kind
+   (`loop-system/references/verifier-protocol.md` is never invoked from here).
+   A nomination is a row in the proposal block — never a diff, and never a
+   "wait". The Output section already routes it: unresolved proposals here are
+   consumed cross-loop by `loop-distill`.
 
-   Promoted rows are PRUNED from the ledger, so read them from the map:
-   `mindgap_find(tag="global-learning")` → nodes whose body carries
-   `status:promoted→<skill-path>`. For each, ask:
-   - **Motivating learning falsified?** The pointer exists for exactly this.
-     If a later verified fact retracted or reversed the learning that
-     motivated the rule, the rule outlived its evidence. Highest-priority
-     retire — and the only one that is near-mechanical to detect.
-   - **Never fires?** No session has invoked it since promotion, or its
-     preconditions no longer occur (the tool, path, or workflow it governs is
-     gone). Same usage logic item 4 applies to rows, applied one layer up.
-   - **Misfires repeatedly?** ≥2 `lessons.md` entries attributable to the rule
-     — it is causing the failure it was meant to prevent.
-   - **Over-fit to a weaker tier?** A rule promoted from a low-tier session can
-     encode a workaround that CONSTRAINS a stronger model rather than helping
-     it. WikiSkill measured this: small-model skills dropped a strong model
-     from 50.5% to 18.1%. Suspect any rule that reads as a narrow workaround
-     rather than a principle.
+   **Promote-nomination** — a row at `used: ≥1` (or `Occurrences: ≥2`) whose
+   rule changed a decision more than once. Countable, so it is the trigger to
+   lean on.
 
-   **Retiring a rule never destroys the learning.** Restore the row to the
-   ledger at `status:candidate` with its original evidence and a note of the
-   retirement, and mark the map node `retired:<date>:<reason>`. This is the
-   same asymmetry the rejection path uses, in the other direction: the skill
-   layer shrinks, the knowledge layer never does. A retired rule may be
-   re-promoted later on better evidence.
+   **Retire-nomination.** Promoted rows are PRUNED from the ledger, so read
+   them from the map: `mindgap_find(tag="global-learning")` → nodes whose
+   body carries `status:promoted→<skill-path>`. Only one trigger is executable
+   today; say which fired.
+   - **Motivating learning falsified** — a later verified fact retracted or
+     reversed the learning the pointer names. Near-mechanical to detect, and
+     the only trigger with a real observation channel. Use this one.
+   - **Reads as a narrow workaround** rather than a transferable rule —
+     advisory only, and never sufficient alone. It is a judgement about
+     wording with nothing to check it against, so it selects for vague rules
+     over specific true ones — and this ledger's most-used rows are precisely
+     the specific ones (naming an alias, a flag, a path). Flag it for a human;
+     never act on it unaided, and never use it to BLOCK a promotion.
 
-   Approval-gated like everything here: propose the exact diff (the rule to
-   remove, its motivating learning, which trigger fired), show it, wait. Never
-   remove a whole skill on this path — only rules within one. A rule that
-   still qualifies gets `requalified:<date>` on its node so the next pass can
+   <!-- BLOCKED, do not pretend otherwise: "never fires" and "misfires ≥2×"
+        have no observation channel. Promotion PRUNES the row, so used:/last:
+        stops at the moment of promotion and nothing counts a rule's firings
+        afterwards. "Over-fit to a weaker tier" has no tier signal recorded
+        anywhere in a row or STATE.md. Re-enable these only once a promoted
+        row leaves a stub carrying used:/last:. Until then this pass can
+        nominate a promotion far more reliably than a retirement — which
+        makes the skill layer a ratchet, and that is a known open defect,
+        not a solved problem. -->
+
+   **Retiring a rule never destroys the learning.** When `loop-distill`
+   approves one, the row returns to the ledger at `status:candidate` with its
+   original evidence and a note of the retirement, and the map node is marked
+   `retired:<date>:<trigger>`. Same asymmetry as the rejection path, running
+   the other way: the skill layer shrinks, the knowledge layer never does.
+   A rule that still qualifies gets `requalified:<date>` so the next pass can
    tell "checked and kept" from "never checked".
 
 ## Output
@@ -151,14 +157,13 @@ next pass reads:
 - declined promotion → `status:rejected:<YYYY-MM-DD>:<one-line reason>`.
 - approved retire → prune the row; declined retire → bump `last:` to today so
   the ≥3-session retire clock restarts rather than firing again next pass.
-- approved rule-retirement (item 6) → `retired:<YYYY-MM-DD>:<trigger>` on the
-  map node, AND restore the learning to the ledger at `status:candidate` with
-  its original evidence. The rule leaves the skill; the knowledge does not
-  leave the system.
-- rule re-qualified (item 6, still earning its place) → `requalified:<date>`
-  on the node, so the next pass distinguishes "checked and kept" from "never
-  checked". Without this the removal half silently degrades into never
-  re-examining anything, which is the state it was added to fix.
+- skill-rule nominations (item 6) → recorded in this block as nominations and
+  handed to `loop-distill`. This pass writes NOTHING under any `skills/` path
+  and authors no diff. `loop-distill` performs the write under its phase-5
+  gate and marks the map node `retired:<date>:<trigger>` or
+  `requalified:<date>` — the latter so a later pass can tell "checked and
+  kept" from "never checked", without which the removal half degrades into
+  never re-examining anything.
 
 A pass that proposes without recording the verdict re-proposes the same items
 every third session forever.
@@ -185,6 +190,15 @@ its own memory writes this session — never a gate:
   facts`, and was the old line deleted (SESSION END step 1)? A surviving
   contradicted line is a miss — retract it now rather than waiting for the
   next pass; it is read at every RESUME in between.
+- **Did any ledger row inform a decision this session, and did its
+  `used:`/`last:` actually get bumped?** RESUME step 1 already requires this,
+  and it is the single most-skipped instruction in the system: 41 of 60 rows
+  sit at `used:0`. The counter is the ONLY non-judgement input the promote
+  path has — item 4 and item 6's promote-nomination both key on it — so an
+  unbumped counter silently disarms the whole promotion mechanism while every
+  file looks correctly maintained. Bump it now if it was missed. Name the rows
+  in the `## Memory check` line so a skipped bump is visible rather than
+  invisible.
 
 Record one line under a `## Memory check` heading in STATE.md
 (`session <k> · <ok | flags: …>`). Flags accumulate there for the next

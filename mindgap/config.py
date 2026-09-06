@@ -60,3 +60,12 @@ def frontier_path() -> Path:
 
 def activity_path() -> Path:
     return data_dir() / "activity.jsonl"
+
+
+def ledger_path() -> Path:
+    """The loop-system cross-project ledger. Lives OUTSIDE this repo and is never
+    committed (see docs/MIGRATION.md); the usage hook is the only code here that
+    touches it, and only to bump a row's `used:`/`last:` suffix."""
+    if os.environ.get("MINDGAP_LEDGER"):
+        return Path(os.environ["MINDGAP_LEDGER"])
+    return Path.home() / "self_learning_global" / "loop-system" / "global-learnings.md"
