@@ -140,8 +140,7 @@ def rwr(g, seeds, restart=0.25, iters=150, tol=1e-10, exclude=None):
 
 PLACEHOLDER_IDS = {"node-id"}
 SCAFFOLD_IDS = {"research-team", "research-wiki-home"}
-CONTENT_TYPES = {"concept", "paper", "page", "definition", "software", "repo", "learning",
-                 "movie", "show"}
+CONTENT_TYPES = {"concept", "paper", "page", "definition", "software", "repo", "learning"}
 
 
 def _age_days(created_at, now):

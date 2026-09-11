@@ -12,10 +12,15 @@ instead of being asked for.
 
 How it stays honest rather than merely non-zero:
 
-* It bumps ONLY what the recall hook actually injected. `recall_hook` records
-  its digest as one `activity` event with `actor="recall"`, so the last such
-  event IS this session's injection — a deterministic record, not a guess about
-  what got "used".
+* It bumps ONLY what the recall hook actually injected INTO THIS SESSION.
+  `recall_hook` records its digest as one `activity` event tagged
+  `actor="recall:<session_id>"`, and only an event carrying this session's id
+  counts — a deterministic record, not a guess about what got "used". The
+  ownership check is the point: taking "the most recent recall event" instead
+  means a session where recall never fired bumps whatever a DIFFERENT session
+  was shown, inflating the single counter the promote gate reads. That is not
+  hypothetical — it is what a stale `matcher` on the SessionStart hook produced
+  in 09/2026.
 * It bumps only after `capture.pregate()` accepts the session, reusing the
   same substantive/on-domain test the capture hook gates on. A two-message
   session bumps nothing.
@@ -45,13 +50,22 @@ MAP_RE = re.compile(r"map:([A-Za-z0-9._-]+)")
 USAGE_RE = re.compile(r"used:(\d+) last:\d{4}-\d{2}-\d{2}")
 
 
-def recalled_ids() -> set:
+def recalled_ids(session_id) -> set:
     """Node ids the recall hook injected into THIS session.
 
-    recall fires once per session, so the most recent `actor="recall"` event is
-    ours. Older events belong to earlier sessions and must not be re-bumped.
+    Matched by session id, which recall stamps into the event actor. Timestamps
+    cannot do this job: recall writes its event slightly BEFORE the harness
+    records the SessionStart that would bound it, so any clock-based window
+    excludes the very digest it means to keep.
+
+    A session with no recall event of its own bumps nothing. Events written
+    before recall carried a session id (bare `actor="recall"`) never match, so
+    the guard fails closed on legacy rows rather than crediting them here.
     """
-    events = [e for e in activity.tail() if e.get("actor") == "recall"]
+    if not session_id:
+        return set()
+    mine = f"recall:{session_id}"
+    events = [e for e in activity.tail() if e.get("actor") == mine]
     if not events:
         return set()
     return {i for i in events[-1].get("ids", []) if isinstance(i, str)}
@@ -106,7 +120,7 @@ def main(stdin_text=None) -> int:
             hook_input.get("transcript_path"), hook_input.get("cwd", ""), cfg)
         if not ok:
             return 0
-        ids = recalled_ids()
+        ids = recalled_ids(hook_input.get("session_id"))
         if not ids:
             return 0
         path = config.ledger_path()

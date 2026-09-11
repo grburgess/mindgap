@@ -109,7 +109,14 @@ def build_digest(hook_input, cfg) -> str:
     if not matched and not learnings:
         return ""
     try:   # fire the recalled nodes on the live activity feed (web 'neurons firing')
-        activity.record("read", [n["id"] for n in matched + learnings], actor="recall")
+        # The session id rides in the actor (house convention: `capture:<repo>`,
+        # `loop:<name>`) so usage_hook can tell OUR digest from one belonging to a
+        # different session, without comparing clocks across two processes.
+        # Unstamped when the id is missing: a bare `recall` never matches there,
+        # which costs that session its usage bump but never mis-credits another.
+        sid = hook_input.get("session_id") or ""
+        activity.record("read", [n["id"] for n in matched + learnings],
+                        actor=f"recall:{sid}" if sid else "recall")
     except Exception:
         pass   # feed is eye-candy; never break recall
     out = ["## mindgap recall (auto, SessionStart)"]
