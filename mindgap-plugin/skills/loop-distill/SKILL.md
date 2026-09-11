@@ -147,11 +147,22 @@ Rows carry the global-learnings usage suffix byte-identically:
 ## Phase 4 · verify on promotion
 
 Verification cost scales with reach, so only candidates bound for
-`CLAUDE.md` or global learnings are re-verified: a stale ledger row costs
-one project, a stale global row costs every project. Protocol in
+`CLAUDE.md`, global learnings, **or a skill** are re-verified: a stale
+ledger row costs one project, a stale global row costs every project, and a
+stale SKILL rule costs every project on every task the skill triggers on —
+the highest reach in the system. Protocol in
 `references/promotion-protocol.md` — one independent verifier subagent per
 candidate, receiving the fact AND its check procedure inlined, and never
 loop reasoning, chat, or a file path to go read.
+
+**Skill candidates verify the FACT, never the generalisation.** A skill rule
+is a procedure; this phase can only establish that the observation behind it
+still holds. `HOLDS` on "the loop stalled twice on X" does NOT license
+"therefore always do Y" — the verifier is deliberately blind to the
+generalisation step, so the leap from fact to rule stays a human judgement at
+the phase-5 gate. Never let a `HOLDS` verdict read as endorsement of the rule
+it motivated: that would put a verification badge on an unverified write,
+which is worse than the honest absence of one.
 
 Verdict schema: **`HOLDS` | `STALE` | `UNPROVABLE`, plus one evidence
 line.** `STALE` demotes to ledger §6 carrying that evidence and is never
@@ -196,6 +207,38 @@ ledger §7 as `status:proposed`, surface it in the phase-7 report, and
 return control. A distill that blocks stalls SESSION END step 4
 (auto-continue) and burns the loop's remaining wakeups. The gate prevents
 an unreviewed write; it does not hold a session open.
+
+### Skill rules — this skill owns creation and destruction
+
+`loop-system`'s structure pass NOMINATES; nothing there writes under a
+`skills/` path. This phase decides. It is the only component that reads every
+loop in the project and the whole flat cross-project ledger (rows carry no
+project field, so the mandated dedup is a whole-file read), and the only one
+that can spawn a verifier.
+
+- **Create** — a nomination at `used: ≥1`, phase-4 `HOLDS` on its underlying
+  fact, and a human approving the diff. `UNPROVABLE` → withhold and leave the
+  row a candidate; never self-verify inline; never promote on judgement alone.
+  On approval write `status:promoted→<skill-path>` into the mirrored `gl-*`
+  node BEFORE pruning the ledger row (two stores, no transaction).
+- **Destroy** — today only the *motivating-learning-falsified* trigger has a
+  real observation channel. Retire on that; treat the workaround-shape flag as
+  advisory and never as a promotion block.
+
+**Prefer not promoting while retirement is weaker than promotion.** Promotion
+prunes the row, so `used:`/`last:` stops at that moment and nothing counts a
+rule's firings afterwards — three of the four retirement triggers are inert.
+Until a promoted row leaves a stub carrying its counter, this system can add
+skill rules far more reliably than it can remove them. That asymmetry is a
+known open defect: hold promotion to rules whose evidence you would still
+defend if you could never take them back.
+
+**Do not wait on loop completion alone.** This skill fires when a loop
+completes or force-escalates — but one of sixteen loops carries a conformant
+completion line, twelve carry none, and standing loops (`arxiv-weekly`,
+`jira-tickets`) never complete by construction. Their nominations would be
+decided never. Also run the skill-rule pass when invoked manually, or when the
+oldest outstanding nomination exceeds three sessions.
 
 `CLAUDE.md` is written only between the `<!-- loop-distill:begin -->` and
 `<!-- loop-distill:end -->` markers, regenerated in place and capped at

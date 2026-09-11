@@ -1,6 +1,7 @@
 """mindgap CLI. See docs/superpowers/specs/2026-06-12-mindmap-design.md."""
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -294,6 +295,46 @@ def cmd_init(args):
           else f"db at {config.db_path()} already initialized")
 
 
+def install_symlinks(bin_dir=None) -> list:
+    """Symlink the source-mode launcher scripts (bin/mindgap*) into bin_dir
+    (default ~/.local/bin), pointing at this checkout. Idempotent.
+    Returns the names linked."""
+    bin_dir = Path(bin_dir) if bin_dir else Path.home() / ".local" / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    src_bin = config.PKG_DIR.parent / "bin"
+    linked = []
+    for script in sorted(src_bin.iterdir()):
+        if not os.access(script, os.X_OK):
+            continue
+        dst = bin_dir / script.name
+        if dst.is_symlink() or dst.exists():
+            dst.unlink()
+        dst.symlink_to(script.resolve())
+        linked.append(script.name)
+    return linked
+
+
+def cmd_install(args):
+    bin_dir = Path.home() / ".local" / "bin"
+    linked = install_symlinks(bin_dir)
+    print(f"linked {', '.join(linked)} -> {bin_dir}")
+    if str(bin_dir) not in os.environ.get("PATH", "").split(os.pathsep):
+        print(f"note: add {bin_dir} to PATH")
+
+    n = migrate()
+    if n:
+        print(f"migrated {n} legacy file(s) into {config.data_dir()}")
+
+    seeded = init_db()
+    print(f"seeded {config.db_path()} ({seeded} nodes)" if seeded
+          else f"db at {config.db_path()} already initialized")
+    if install_capture_preset():
+        print(f"installed capture preset -> {__import__('mindgap.capture', fromlist=['x']).config_path()}")
+
+    print()
+    print("mindgap serve   # web UI at http://localhost:8765")
+
+
 def _loops_local():
     return Path.cwd() / "self-learning-loop"
 
@@ -447,6 +488,9 @@ def main(argv=None):
     p = sub.add_parser("init", help="create ~/.mindgap DB and seed it from the bundled seed.json")
     p.add_argument("--force", action="store_true", help="re-seed even if the db already has nodes")
     p.set_defaults(func=cmd_init)
+
+    p = sub.add_parser("install", help="symlink launchers into ~/.local/bin, migrate legacy data, seed the db")
+    p.set_defaults(func=cmd_install)
 
     p = sub.add_parser("loop", help="scaffold / share knowledge loops from bundled templates")
     lsub = p.add_subparsers(dest="loop_cmd", required=True)
