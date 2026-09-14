@@ -11,9 +11,6 @@ import sys
 from pathlib import Path
 
 from . import activity, capture, config, db
-# Row parsing is defined once, in usage_hook, and imported — restating a shared
-# format in a second module is how the two copies drift apart.
-from .usage_hook import MAP_RE, ROW_RE, USAGE_RE
 
 GENERIC_TOKENS = {"src", "repo", "repos", "project", "projects", "code",
                   "work", "home", "users", "tmp", "dev", "app", "lib"}
@@ -56,37 +53,14 @@ def _line(n: dict) -> str:
     return f"- {n['id']} [{n.get('type', '?')}] {n.get('title', '')} — {_snippet(n.get('body', ''))}"
 
 
-PROMOTE_MIN = 2        # the countable promote trigger: used: >= 2
-PROMOTE_SHOW = 3       # surface only the top few; this rides in EVERY session
-_DECIDED = re.compile(r"status:(promoted|rejected|proposed-skill)")
-
-
-def promote_eligible(path=None) -> list:
-    """Ledger rows at used:>=PROMOTE_MIN carrying no decision, strongest first.
-
-    This is link 4 of the promote chain. The counter now moves (the SessionEnd
-    usage hook), and 18 rows crossed the threshold without one ever being put to
-    a human — because nothing in the system surfaces an outstanding candidate at
-    a moment someone could act on it. Prose steps here are followed at roughly
-    chance; the recall hook fires every session. So the surfacing rides the
-    mechanism with the perfect record instead of a protocol step.
-
-    Returns [(used, node_id), ...]. Cheap: one file read, no DB.
-    """
-    p = path or config.ledger_path()
-    if not p.exists():
-        return []
-    out = []
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        if not ROW_RE.match(line) or _DECIDED.search(line):
-            continue
-        m = USAGE_RE.search(line)
-        if not m or int(m.group(1)) < PROMOTE_MIN:
-            continue
-        nid = MAP_RE.search(line)
-        out.append((int(m.group(1)), nid.group(1) if nid else "(unmirrored)"))
-    out.sort(key=lambda t: -t[0])
-    return out
+# Promote-eligible surfacing was REMOVED 2026-09-14 on its own kill criterion:
+# three sessions of surfacing, 26 candidates shown at every session start, zero
+# ever promoted, rejected or proposed. Surfacing a candidate does not cause
+# anyone to decide it — the decision was still a prose step in loop-distill
+# (phase 4 verify -> phase 5 gate), the same unenforced-link failure the usage
+# counter escaped by moving into a hook. Deleted rather than tuned a third time.
+# The ledger rows and their `used:` counters are untouched; they are simply no
+# longer advertised. Revive only alongside a mechanical decision step.
 
 
 def build_digest(hook_input, cfg) -> str:
@@ -126,20 +100,6 @@ def build_digest(hook_input, cfg) -> str:
     if learnings:
         out.append("Recent cross-project loop learnings (tag global-learning):")
         out += [_line(n) for n in learnings]
-    try:
-        elig = promote_eligible()
-    except Exception:
-        elig = []          # surfacing is best-effort; never break recall
-    if elig:
-        top = ", ".join(f"{nid} (used:{u})" for u, nid in elig[:PROMOTE_SHOW])
-        out.append(
-            f"Promote-eligible: {len(elig)} ledger row(s) at used:>={PROMOTE_MIN} "
-            f"with no decision recorded. Strongest: {top}."
-        )
-        out.append(
-            "These are candidates for a skill rule. Deciding is loop-distill's "
-            "(phase 4 verify -> phase 5 gate); until then each stays a candidate."
-        )
     out.append(QUERY_HINT)
     return "\n".join(out)
 
