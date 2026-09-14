@@ -16,9 +16,7 @@ Two interfaces, same db: the **CLI** (above) and the **MCP server** (`python3 -m
 ## Vocabularies
 
 - Node `type`: `concept | definition | software | repo | page | paper | person | team | design | feature | learning | jira-ticket | todo | stub`
-  - media domain (Radarr/Sonarr library): `movie | show | genre | studio | network | collection | franchise`
 - Edge `rel`: `relates_to | defines | implements | depends_on | cites | part_of | mentions | assigned_to | reported_by | resolved_by`
-  - media domain: `produced_by` (movie→studio), `aired_on` (show→network), `has_genre` (movie/show→genre), `directed_by` (movie→person), `stars` (movie→person)
 
 ## Near-duplicate check
 
