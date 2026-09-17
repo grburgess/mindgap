@@ -166,6 +166,27 @@ The UI is vanilla JS with no build step, drawing `force-graph`/`3d-force-graph`,
 
 ![quick switcher](assets/ui-switcher.gif)
 
+## mindtop — terminal UI
+
+`mindtop` is a `top`-like view of the graph: open todos in one pane, newly added
+nodes in the other, both refreshing about once a second while it is idle.
+
+    mindtop                 # run it
+    mindtop close <id>      # mark a todo status:done and exit
+
+`j`/`k` move and `g`/`G` jump; `Tab` switches pane; `Enter` opens a node, and
+inside that view `Enter` follows the selected link while `Esc` or `q` walks back
+one hop at a time. `/` filters both panes as you type, `Enter` commits the filter
+so you can act on what it found, and `Esc` clears it. `c` closes the selected
+todo behind a confirmation, `o` opens a node's first URL, `r` forces a refresh.
+`q` quits from the main screen, and `Ctrl-C` quits from anywhere.
+
+It needs an interactive terminal — piping or redirecting its output prints a
+message saying so rather than failing obscurely.
+
+`install.sh` builds it when a Rust toolchain is present and skips it otherwise:
+mindgap itself never requires cargo.
+
 ## MCP server
 
 For agents, `mindgap/mcp.py` exposes the graph as an [MCP](https://modelcontextprotocol.io) server over stdio — stdlib-only (newline-delimited JSON-RPC 2.0, no pip deps). For **all sessions everywhere**, register it globally at user scope: `claude mcp add -s user mindgap mindgap-mcp` (needs `mindgap-mcp` on PATH; the launcher self-locates and the DB lives in `~/.mindgap`, so it works from any directory). A source checkout also ships a project-scoped [`.mcp.json`](.mcp.json) → `./bin/mindgap-mcp`, active only inside the repo.

@@ -7,3 +7,6 @@ claude_comments/
 build/
 dist/
 *.egg-info/
+
+# Rust build output for the optional mindtop TUI
+tui/target/

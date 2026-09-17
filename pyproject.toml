@@ -21,4 +21,4 @@ mindgap-capture-hook = "mindgap.capture_hook:main"
 include = ["mindgap*"]
 
 [tool.setuptools.package-data]
-mindgap = ["web/*", "seed.json", "loops/**/*", "capture.json"]
+mindgap = ["web/*", "seed.json", "loops/**/*", "capture.json", "schema.sql"]
