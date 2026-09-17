@@ -23,9 +23,23 @@ fi
 # 2. Seed if empty.
 mindgap init     2>/dev/null || python3 -m mindgap init
 
-# 3. Next steps.
+# 3. Optional: the mindtop TUI. Needs a Rust toolchain, and mindgap must stay
+#    installable without one — so a missing cargo is a notice, and a FAILED
+#    build is a notice too. The `if !` form is deliberate: a bare command under
+#    `set -e` would abort the whole installer after step 1 already succeeded.
+if command -v cargo >/dev/null 2>&1; then
+  echo "building mindtop (Rust TUI)..."
+  if ! cargo install --path tui --root "$HOME/.local" --locked; then
+    echo "note: mindtop build failed; mindgap itself is installed and usable" >&2
+  fi
+else
+  echo "note: cargo not found — skipping the optional mindtop TUI" >&2
+fi
+
+# 4. Next steps.
 echo
 echo "installed ($MODE). data dir: ${MINDGAP_HOME:-$HOME/.mindgap}"
 echo "  mindgap serve                          # web UI at http://localhost:8765"
+echo "  mindtop                                # terminal UI (if the build above succeeded)"
 echo "  claude mcp add mindgap mindgap-mcp     # register MCP for Claude Code (after pip/pipx)"
 echo "  /plugin marketplace add grburgess/mindgap && /plugin install mindgap   # skills + MCP"

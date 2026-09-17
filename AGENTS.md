@@ -17,6 +17,32 @@ Two interfaces, same db: the **CLI** (above) and the **MCP server** (`python3 -m
 
 - Node `type`: `concept | definition | software | repo | page | paper | person | team | design | feature | learning | jira-ticket | todo | stub`
 - Edge `rel`: `relates_to | defines | implements | depends_on | cites | part_of | mentions | assigned_to | reported_by | resolved_by`
+- Todo status: an **open** todo is a `type='todo'` node tagged neither
+  `status:done` nor `status:dropped` — both are terminal. `status:doing` is
+  in-flight work and stays open. A todo carrying no `status:*` tag at all is
+  still open — some are tagged `open-action` instead. The rule is stated as an
+  absence, so apply it as one wherever you can read the tag list yourself.
+  `find` cannot: it matches a tag token and has no negation, so it cannot
+  express "not done". The `todo-mindmap` skill therefore asks for what it can
+  name — `tag="status:open"`, then again `tag="status:doing"` — which is the
+  closest approximation available through that tool and does miss a todo tagged
+  neither. **Closing** one means: strip every `status:*` tag, append
+  `status:done` (or `status:dropped`), and bump `updated_at`. Timestamps are
+  UTC at second resolution, written with a `+00:00` offset — which is what
+  `datetime.now(timezone.utc).isoformat(timespec="seconds")` produces — and
+  never a `Z`, which is what chrono's `to_rfc3339` would give you.
+- `mindtop` (Rust, `tui/`) implements the tag/timestamp half of that closing
+  rule: `tui/src/db.rs::close_todo` rewrites the `tags` JSON directly in SQL —
+  strip `status:*`, push `status:done`, bump `updated_at` — and nothing else.
+  It is **not** equivalent to a skill-driven close: the `todo-mindmap` skill
+  additionally appends a `**Done:** YYYY-MM-DD — <outcome>` line to the body
+  and adds a `resolved_by` edge when an artifact exists, neither of which
+  `close_todo` writes; nor can it record `status:dropped`, which only the skill
+  path can set. A todo closed from the TUI is therefore correctly *out* of the
+  open set but carries no record of how. If the tag/timestamp rule above
+  changes, `close_todo` must change with it;
+  `tests/test_tui_contract.py` is what catches divergence — but only once the
+  crate is built, since it skips when `tui/target/debug/mindtop` is absent.
 
 ## Near-duplicate check
 
