@@ -43,3 +43,4 @@ echo "  mindgap serve                          # web UI at http://localhost:8765
 echo "  mindtop                                # terminal UI (if the build above succeeded)"
 echo "  claude mcp add mindgap mindgap-mcp     # register MCP for Claude Code (after pip/pipx)"
 echo "  /plugin marketplace add grburgess/mindgap && /plugin install mindgap   # skills + MCP"
+echo "  opencode                            # in the repo, .opencode/opencode.json registers the MCP + bonsai model (any-dir: see README)"

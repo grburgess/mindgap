@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "bonsai/bonsai2-27b",
+  "mcp": {
+    "mindgap": {
+      "type": "local",
+      "command": ["./bin/mindgap-mcp"],
+      "cwd": ".",
+      "enabled": true
+    }
+  }
+}

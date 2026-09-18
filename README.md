@@ -57,6 +57,30 @@ Register the MCP at **user scope** so every Claude Code session, in any director
 
 `-s user` is what makes it global (the default scope is local/current-dir only). The launcher self-locates and the DB lives in `~/.mindgap`, so it runs from anywhere. A source checkout also ships a project-scoped `.mcp.json` → `./bin/mindgap-mcp`, active only inside this repo.
 
+### OpenCode (skills + MCP)
+The repo ships `.opencode/opencode.json` — it registers the `mindgap` MCP server
+(`./bin/mindgap-mcp`, active only inside this repo), pins the `model` to
+`bonsai/bonsai2-27b` (provider merged from your global
+`~/.config/opencode/opencode.json`; delete the line to use another model), and
+opencode auto-loads the protocol in [AGENTS.md](AGENTS.md). Eleven skills are
+picked up from `.opencode/skills/` (a symlink to `mindgap-plugin/skills/`). So
+a source checkout just works — run `opencode` in the repo and say the same
+things:
+
+    "set up an arxiv-weekly loop watching <your topics> and run the first pass"
+    "continue the <name> loop"
+
+For **any directory** (not just the repo), register the server at user scope by
+adding this to your global `~/.config/opencode/opencode.json`:
+
+    "mcp": {
+      "mindgap": {
+        "type": "local",
+        "command": ["mindgap-mcp"],
+        "enabled": true
+      }
+    }
+
 ### Where data lives
 `~/.mindgap/` — `mindgap.db` and `snapshots/`. `MINDGAP_HOME` relocates the whole dir;
 `MINDGAP_DB` points at a single DB file elsewhere.
@@ -97,7 +121,7 @@ After this the plugin directory holds only code, so updates are safe.
 
 ## Give an agent a goal
 
-You don't drive this graph node-by-node — you point an agent at a goal and let it loop. Install the [Claude Code plugin](#claude-code-plugin-skills--mcp), then in any project just say:
+You don't drive this graph node-by-node — you point an agent at a goal and let it loop. Install the [Claude Code plugin](#claude-code-plugin-skills--mcp) or [set up OpenCode](#opencode-skills--mcp), then in any project just say:
 
     "set up an arxiv-weekly loop watching <your topics> and run the first pass"
     "continue the <name> loop"
