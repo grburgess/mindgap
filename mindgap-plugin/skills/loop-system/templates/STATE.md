@@ -57,7 +57,7 @@ none
 <!-- read by an auto session to decide continue-vs-halt against the ceiling BEFORE designing the session. -->
 - status: {{on | off}}
 - budget spent: {{<iterations so far>}} / {{<GOAL §4 total ceiling>}}
-- session-in-progress: no   <!-- set `yes` at session start, back to `no` at SESSION END; a wakeup that finds `yes` must not double-run. This is the ONLY double-run guard. Sole exception: `loop-distill` may clear a long-abandoned flag — and only when this STATE's mtime is >24h AND `Last session` is not today; a merely slow session (long build, wide test matrix) is flagged, never cleared. -->
+- session-in-progress: no   <!-- set `yes <ISO timestamp>` at session start, back to `no` at SESSION END; a wakeup that finds `yes` must not double-run. This is the ONLY double-run guard. Exceptions: RESUME's liveness test may treat it as stale (newest loop/worktree write > 2 h old AND no live process) and resume the interrupted iteration; separately, `loop-distill` may clear a long-abandoned flag — and only when this STATE's mtime is >24h AND `Last session` is not today; a merely slow session (long build, wide test matrix) is flagged, never cleared. -->
 - last wakeup: {{none | <ScheduleWakeup id @ time>}}
 - halt reason: {{none | <trigger that stopped auto-continuation>}}
 

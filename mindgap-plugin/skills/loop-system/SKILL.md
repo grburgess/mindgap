@@ -207,8 +207,16 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
    unattended sessions.
 5. **Before running the next session:**
    - **Concurrent-session guard:** if STATE § Auto mode shows
-     `session-in-progress: yes`, a live session is already running — do
-     NOT double-run; PushNotification and stop. Otherwise set it to `yes`.
+     `session-in-progress: yes`, a live session may already be running.
+     Test liveness before trusting it: the lock is **stale** only when the
+     newest file under the loop dir AND its maker worktrees is > 2 h old
+     AND no matching process (pytest/python/build in the project or its
+     worktrees) is alive. Live → do NOT double-run; PushNotification and
+     stop. Stale (a killed REPL never reaches SESSION END) → log it in
+     `Open failures` (dates, last commit, what the dead session left) and
+     resume the interrupted iteration: verify any maker output it left in
+     a worktree before re-running that maker. Otherwise set it to
+     `yes <ISO timestamp>` so the next reader can date it.
    - **Extra/auto-session focus re-scan (L10):** if this is an auto or
      extra session following a focus proposed by a prior STATE note,
      re-scan current ground truth (id/title/path sweep on the focus
