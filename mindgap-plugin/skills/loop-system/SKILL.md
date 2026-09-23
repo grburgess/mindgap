@@ -41,6 +41,13 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
    budget without converging.
    - Done-criteria must be measurable and checkable by a verifier that
      sees only the artifact. "Make it better" is not a criterion.
+   - **Satisfiability:** a criterion must be able to PASS when the work is
+     done well, not only fail when it isn't. When a criterion bounds a rate
+     over simulated or sampled data (divergence-free fraction, coverage,
+     acceptance rate), pilot it on ≥ 5 prior/simulated draws before the gate
+     closes, or mark it provisional in GOAL §2 until the first pilot. A bar
+     the method can't reach at part of the prior only surfaces sessions
+     later, as an escalation (popinf-gates criterion 5, 2026-09-23).
    - If the user can't supply a measurable criterion, propose a proxy:
      a verifier checklist of N observable properties. If they decline
      proxies too, refuse to loop — do the task one-shot and say why.
