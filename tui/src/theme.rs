@@ -5,23 +5,34 @@ use ratatui::style::{Color, Modifier, Style};
 /// orange in the terminal as in the browser. tests/test_tui_palette.py
 /// fails if these drift apart.
 pub const TYPE_COLORS: &[(&str, u8, u8, u8)] = &[
-    ("concept", 0x57, 0xc7, 0xa4),
-    ("definition", 0xa7, 0x8b, 0xfa),
-    ("software", 0x5a, 0xa9, 0xe6),
-    ("repo", 0xf4, 0xa2, 0x61),
-    ("page", 0xe9, 0xc4, 0x6a),
-    ("paper", 0xe7, 0x6f, 0x51),
-    ("person", 0xf2, 0x8a, 0xb2),
-    ("team", 0x9a, 0xe6, 0x5a),
-    ("design", 0xd9, 0x46, 0xef),
-    ("feature", 0xf5, 0x9e, 0x0b),
-    ("learning", 0x10, 0xb9, 0x81),
-    ("jira-ticket", 0x06, 0xb6, 0xd4),
-    ("todo", 0xfb, 0x71, 0x85),
-    ("stub", 0x5b, 0x66, 0x63),
+    // 2026-09-24: muted, Obsidian-derived family palette; see app.js for the rationale.
+    // Parity with app.js is enforced by tests/test_tui_palette.py.
+    ("concept", 0x60, 0xa1, 0x92),
+    ("definition", 0x96, 0xd0, 0xd7),
+    ("software", 0x77, 0xac, 0xce),
+    ("repo", 0xb3, 0x7f, 0x57),
+    ("page", 0xdc, 0xb6, 0x88),
+    ("paper", 0xc9, 0x85, 0x70),
+    ("person", 0xde, 0xa4, 0xbc),
+    ("team", 0xaf, 0x78, 0x9c),
+    ("design", 0xab, 0x91, 0xc9),
+    ("feature", 0x9c, 0xcc, 0xe3),
+    ("learning", 0x7c, 0xbc, 0x8d),
+    ("jira-ticket", 0x4a, 0x8b, 0x9a),
+    ("todo", 0xda, 0x81, 0x84),
+    ("stub", 0x5d, 0x65, 0x65),
+    ("finding", 0x70, 0xc2, 0xbe),
+    ("reference", 0xa5, 0xa1, 0x6a),
+    ("verified-fact", 0xa3, 0xd9, 0xbb),
+    ("project", 0x62, 0x87, 0xbf),
+    ("idea", 0xc9, 0xc4, 0xf3),
+    ("fact", 0x70, 0x99, 0x6b),
+    ("process", 0xa1, 0xaf, 0xde),
+    ("decision", 0x95, 0x70, 0xa5),
+    ("gotcha", 0xd5, 0xbc, 0x70),
 ];
 
-/// The graph holds ~48 distinct types but only 14 are canonical. The rest get a
+/// The graph holds ~48 distinct types; 23 are canonical. The rest get a
 /// stable hue derived from the name, so the long tail stays readable instead of
 /// collapsing into one gray.
 pub fn type_color(node_type: &str) -> Color {
@@ -35,7 +46,7 @@ pub fn type_color(node_type: &str) -> Color {
         h ^= byte as u32;
         h = h.wrapping_mul(16777619);
     }
-    let (r, g, b) = hsl_to_rgb((h % 360) as f64, 0.55, 0.68);
+    let (r, g, b) = hsl_to_rgb((h % 360) as f64, 0.30, 0.62);
     Color::Rgb(r, g, b)
 }
 
@@ -113,10 +124,10 @@ pub fn type_tag(node_type: &str) -> String {
 
 pub fn status_color(tags: &[String]) -> Option<Color> {
     if tags.iter().any(|t| t == "status:done") {
-        return Some(Color::Rgb(0x10, 0xb9, 0x81));
+        return Some(Color::Rgb(0x7c, 0xbc, 0x8d));
     }
     if tags.iter().any(|t| t == "status:open") {
-        return Some(Color::Rgb(0xf5, 0x9e, 0x0b));
+        return Some(Color::Rgb(0xd5, 0xbc, 0x70));
     }
     None
 }
@@ -127,8 +138,8 @@ mod tests {
 
     #[test]
     fn canonical_types_use_the_web_palette() {
-        assert_eq!(type_color("paper"), Color::Rgb(0xe7, 0x6f, 0x51));
-        assert_eq!(type_color("todo"), Color::Rgb(0xfb, 0x71, 0x85));
+        assert_eq!(type_color("paper"), Color::Rgb(0xc9, 0x85, 0x70));
+        assert_eq!(type_color("todo"), Color::Rgb(0xda, 0x81, 0x84));
     }
 
     #[test]

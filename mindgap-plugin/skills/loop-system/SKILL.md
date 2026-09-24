@@ -317,8 +317,8 @@ GOAL.md `Max sessions before forced escalation` → forced escalation.
      one-line-per-iteration.
 
      **Recoverability gate:** delete only if the loop directory is git-tracked
-     AND committed. Otherwise — three loop dirs in this repo are untracked, and
-     tracked ones run uncommitted across sessions — MOVE the line under a
+     AND committed. Otherwise — loop dirs are often untracked, and tracked
+     ones run uncommitted across sessions — MOVE the line under a
      `## Superseded` heading below `Verified facts` instead. Same context
      hygiene, nothing destroyed. Name every retraction in the session's
      `## Memory check` line, so an unattended bad delete surfaces without

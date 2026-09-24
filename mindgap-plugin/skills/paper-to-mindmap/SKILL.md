@@ -26,7 +26,7 @@ relevance gate first — do not ingest reflexively.
    graph.
 
 2. **Read context first.** Find existing related nodes before minting:
-   - `mindmap context "<topic>"` and `mindmap find "<single salient term>"`
+   - `mindgap context "<topic>"` and `mindgap find "<single salient term>"`
      (single terms are reliable; multi-word `context` strings often return empty).
    - **Dedup:** if a node already carries this arXiv id, enrich/upsert that node —
      never create a duplicate.
@@ -51,17 +51,17 @@ relevance gate first — do not ingest reflexively.
    PRE-EXISTING node (`relates_to` / `cites` / `implements`), each backed by a
    concrete reason (which concept/repo/paper it connects to, and why):
    - **Exact ids only** — `[[repo-maestro]]`, not `[[maestro]]`. Verify with
-     `mindmap find` before linking.
+     `mindgap find` before linking.
    - **No fabricated links.** If there is no honest direct connection, link to the
      closest genuine shared concept and state why. Never invent a relationship.
 
 5. **Ingest:**
-   - If the **mindmap MCP** is connected this session, use `mindmap_ingest`
+   - If the **mindgap MCP** is connected this session, use `mindgap_ingest`
      (validated: rejects dangling endpoints whole-payload, requires `created_by`,
      returns the persisted rows). Prefer it.
-   - Else use the **CLI** (on PATH; always targets the central `data/mindmap.db`):
+   - Else use the **CLI** (`mindgap`, on PATH; default DB `~/.mindgap/mindgap.db`):
      ```
-     mindmap ingest - <<'EOF'
+     mindgap ingest - <<'EOF'
      {"nodes": [ ... ], "edges": [ ... ]}
      EOF
      ```
@@ -74,5 +74,5 @@ relevance gate first — do not ingest reflexively.
 
 - No per-paper `mindmap export` — the central DB is source of truth; snapshots
   are handled by loops / manual export.
-- If neither the MCP nor the `mindmap` CLI can reach the DB, report the blocker;
+- If neither the MCP nor the `mindgap` CLI can reach the DB, report the blocker;
   do not fail silently.

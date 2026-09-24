@@ -234,9 +234,9 @@ known open defect: hold promotion to rules whose evidence you would still
 defend if you could never take them back.
 
 **Do not wait on loop completion alone.** This skill fires when a loop
-completes or force-escalates — but one of sixteen loops carries a conformant
-completion line, twelve carry none, and standing loops (`arxiv-weekly`,
-`jira-tickets`) never complete by construction. Their nominations would be
+completes or force-escalates — but many loops never write a conformant
+completion line, and standing loops (recurring scans) never complete by
+construction. Their nominations would be
 decided never. Also run the skill-rule pass when invoked manually, or when the
 oldest outstanding nomination exceeds three sessions.
 

@@ -18,7 +18,7 @@ present it. Not for non-paper docs (use `explainer-slides`) or pure capture with
 explainer (use `paper-to-mindmap`).
 
 ## Reuse (don't reinvent)
-- `explainer-slides` — theme + verify checklist. Default theme is now apple-dark (see `apple-dark-webapp`: shared.css, three.js r128, 8-animation hero library); use a three.js hero as the title figure. Legacy cartographic template on request.
+- `explainer-slides` — theme + verify checklist. Default theme is apple-dark (see `apple-dark-webapp`: shared.css, three.js r128, 8-animation hero library); use a three.js hero as the title figure. Legacy cartographic template on request.
 - `paper-to-mindmap` — the mindmap ingest protocol (verbatim, in P3).
 - atlassian MCP — Confluence search. `burgess_voice` — the prose. `editorial-dark-atlas` —
   figure palette when a figure needs one.

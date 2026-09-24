@@ -20,7 +20,7 @@ DEFAULTS = {
     "min_transcript_bytes": 2000,
     "capture": {"model": "claude-haiku-4-5", "timeout_s": 180,
                 "max_nodes_per_session": 15, "default_confidence": 0.6},
-    "recall": {"enabled": True, "max_nodes": 12, "max_global": 5},
+    "recall": {"enabled": True, "max_nodes": 12, "max_global": 5, "prompt": True, "max_prompt": 6},
     "lint": {"stale_days": 60, "stale_below_confidence": 0.7},
 }
 

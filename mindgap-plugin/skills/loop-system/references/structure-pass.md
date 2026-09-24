@@ -192,8 +192,8 @@ its own memory writes this session — never a gate:
   next pass; it is read at every RESUME in between.
 - **Did any ledger row inform a decision this session, and did its
   `used:`/`last:` actually get bumped?** RESUME step 1 already requires this,
-  and it is the single most-skipped instruction in the system: 41 of 60 rows
-  sit at `used:0`. The counter is the ONLY non-judgement input the promote
+  and it is the single most-skipped instruction in the system (most rows
+  sit at `used:0`). The counter is the ONLY non-judgement input the promote
   path has — item 4 and item 6's promote-nomination both key on it — so an
   unbumped counter silently disarms the whole promotion mechanism while every
   file looks correctly maintained. Bump it now if it was missed. Name the rows

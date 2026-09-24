@@ -6,7 +6,7 @@ for each P5 iteration. Output folder = `<arxiv-id>-<slug>/` in the invocation CW
 
 ## P0 — Preflight
 - `bash <skill>/scripts/preflight.sh` → note which tools are `ok`/`missing`.
-- Read `<skill>/LESSONS.md`, `references/rubric.md`, `references/patterns.md` in full — these
+- Read `$MINDGAP_HOME/learning/arxiv-explainer/LESSONS.md`, `references/rubric.md`, `references/patterns.md` in full — these
   prime every later decision.
 - Apply the degradation table (SKILL.md §Degradation) to any `missing` tool. A missing
   optional tool degrades the run; inability to read the PDF at all aborts with a clear note.
@@ -25,7 +25,7 @@ for each P5 iteration. Output folder = `<arxiv-id>-<slug>/` in the invocation CW
 - Keep only figures that will be embedded or annotated.
 
 ## P3 — Knowledge graph
-- mindmap READ: `mindmap context "<topic>"` and `mindmap find "<salient term>"` (single terms
+- mindmap READ: `mindgap context "<topic>"` and `mindgap find "<salient term>"` (single terms
   are most reliable). Collect related nodes with the reason each connects.
 - Confluence SEARCH (atlassian MCP): search your Confluence space for related pages; collect links.
 - Write `connections.md`: each connection = link + one-line evidence. No fabricated links.
@@ -34,8 +34,9 @@ for each P5 iteration. Output folder = `<arxiv-id>-<slug>/` in the invocation CW
   PRE-EXISTING node → ingest via MCP or CLI; `created_by: skill:arxiv-explainer`).
 
 ## P4 — Build (maker)
-- Copy `explainer-slides/references/template.html` → `index.html`. Keep its `<style>` +
-  `<script>` verbatim (the theme). Swap `<title>`; replace example slides.
+- Build `index.html` on the apple-dark system per `explainer-slides` step 1 (copy
+  `apple-dark-webapp/assets/shared.css` + `three.min.js`; three.js hero as title figure).
+  Legacy cartographic `template.html` only when the user asks for the old look.
 - Write prose in burgess_voice. Number slides `00`,`01`,…; add `reveal` classes.
 - Compose figures per `patterns.md` + lessons, spanning ≥2 of the four techniques
   (rubric check 8). Embed extracted figures from `assets/figures/`; put generated video in
@@ -66,7 +67,7 @@ for each P5 iteration. Output folder = `<arxiv-id>-<slug>/` in the invocation CW
   "no feedback this run" and proceed.
 
 ## P7 — Learn (SESSION END — never skip)
-- Append to `<skill>/LESSONS.md`: wins + gaps, with USER FEEDBACK WEIGHTED ABOVE verifier
+- Append to `$MINDGAP_HOME/learning/arxiv-explainer/LESSONS.md`: wins + gaps, with USER FEEDBACK WEIGHTED ABOVE verifier
   findings. Date each entry; name the paper folder.
 - Auto-tune `rubric.md` when a gap `check` has recurred ≥2× across papers (add a dated
   sub-check; never delete seeds).

@@ -1,0 +1,6 @@
+#!/bin/sh
+# UserPromptSubmit hook: recall nodes matching the prompt words. Never blocks the prompt.
+SELF=$0
+while [ -L "$SELF" ]; do SELF=$(readlink "$SELF"); done
+REPO=$(CDPATH= cd -- "$(dirname -- "$SELF")/.." && pwd)
+PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m mindgap.prompt_recall_hook "$@"
