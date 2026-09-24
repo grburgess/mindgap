@@ -206,7 +206,7 @@ The graph is designed to be fed by recurring autonomous sessions that scan Confl
 - **SessionStart** → `bin/mindgap-recall-hook`: nodes matching the folder name, plus the newest
   cross-project `global-learning` rows.
 - **UserPromptSubmit** → `bin/mindgap-prompt-recall-hook`: nodes matching the *words of the
-  prompt* (stemmed, title/tags/id, at least two words, decisions and gotchas weighted up), up to 6.
+  prompt* (stemmed, title/tags/id, always at least two matching words, decisions and gotchas weighted up), up to 6.
   Session-start recall is newest-first, so in a busy project an old closed decision never makes
   the cut; this one ranks by the question.
 

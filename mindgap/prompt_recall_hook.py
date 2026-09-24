@@ -65,7 +65,7 @@ def _fields(n: dict):
 
 def rank(conn, prompt: str, cwd: str, limit: int) -> list:
     toks = prompt_tokens(prompt)
-    if not toks:
+    if len(toks) < 2:
         return []
     stems = {t: _stem(t) for t in toks}
     here = {_stem(t) for t in tokens_from_cwd(cwd)}
@@ -85,9 +85,10 @@ def rank(conn, prompt: str, cwd: str, limit: int) -> list:
         if n.get("type") in VERDICT_TYPES:
             score += 1.0                        # a ruling beats one more loose word match
         scored.append((len(hit), score, n.get("updated_at") or "", n))
-    # a node must carry at least two of the prompt's words, unless it only has one
-    need = 1 if len(toks) == 1 else 2
-    scored = [s for s in scored if s[0] >= need]
+    # A node must carry at least two of the prompt's words -- always. A one-content-word
+    # prompt ("do the fix", "is it standalone?") matches whatever shares that word, which
+    # is noise; the old "unless the prompt has only one" exception injected exactly that.
+    scored = [s for s in scored if s[0] >= 2]
     scored.sort(key=lambda s: (s[1], s[2]), reverse=True)
     return [s[3] for s in scored[:limit]]
 
