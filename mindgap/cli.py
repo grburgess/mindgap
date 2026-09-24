@@ -314,6 +314,39 @@ def install_symlinks(bin_dir=None) -> list:
     return linked
 
 
+# Hooks that are on by default. Recall at session start (folder) and at every prompt (the
+# question's words): the 2026-09-24 bench showed the first alone ranks important old nodes out.
+# The SessionEnd capture hook stays opt-in (README): it spends model calls.
+DEFAULT_HOOKS = [("SessionStart", "mindgap-recall-hook"),
+                 ("UserPromptSubmit", "mindgap-prompt-recall-hook")]
+
+
+def install_hooks(settings_path=None, bin_dir=None) -> list:
+    """Register DEFAULT_HOOKS in Claude Code's user settings. Idempotent: an event that
+    already runs a command with the same script name (any path) is left alone, and
+    every other key is preserved. Backs the file up once to settings.json.bak.
+    Returns the events added."""
+    settings_path = Path(settings_path) if settings_path else Path.home() / ".claude" / "settings.json"
+    bin_dir = Path(bin_dir) if bin_dir else Path.home() / ".local" / "bin"
+    data = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    hooks = data.setdefault("hooks", {})
+    added = []
+    for event, script in DEFAULT_HOOKS:
+        groups = hooks.setdefault(event, [])
+        cmds = [h.get("command", "") for g in groups for h in g.get("hooks", [])]
+        if any(Path(c.split()[0]).name == script for c in cmds if c.strip()):
+            continue
+        groups.append({"hooks": [{"type": "command", "command": str(bin_dir / script)}]})
+        added.append(event)
+    if added:
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        bak = settings_path.with_name(settings_path.name + ".bak")
+        if settings_path.exists() and not bak.exists():
+            bak.write_text(settings_path.read_text())
+        settings_path.write_text(json.dumps(data, indent=2) + "\n")
+    return added
+
+
 def cmd_install(args):
     bin_dir = Path.home() / ".local" / "bin"
     linked = install_symlinks(bin_dir)
@@ -330,6 +363,11 @@ def cmd_install(args):
           else f"db at {config.db_path()} already initialized")
     if install_capture_preset():
         print(f"installed capture preset -> {__import__('mindgap.capture', fromlist=['x']).config_path()}")
+
+    if not getattr(args, "no_hooks", False):
+        added = install_hooks(bin_dir=bin_dir)
+        print(f"registered Claude Code hooks: {', '.join(added)}" if added
+              else "Claude Code recall hooks already registered")
 
     print()
     print("mindgap serve   # web UI at http://localhost:8765")
@@ -489,7 +527,9 @@ def main(argv=None):
     p.add_argument("--force", action="store_true", help="re-seed even if the db already has nodes")
     p.set_defaults(func=cmd_init)
 
-    p = sub.add_parser("install", help="symlink launchers into ~/.local/bin, migrate legacy data, seed the db")
+    p = sub.add_parser("install", help="symlink launchers into ~/.local/bin, migrate legacy data, seed the db, "
+                                        "register the recall hooks in ~/.claude/settings.json")
+    p.add_argument("--no-hooks", action="store_true", help="skip registering Claude Code hooks")
     p.set_defaults(func=cmd_install)
 
     p = sub.add_parser("loop", help="scaffold / share knowledge loops from bundled templates")

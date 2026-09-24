@@ -30,6 +30,11 @@ any hint of what answer is hoped for.
   failing command output). "Could be better" is not a gap.
 - `evidence` must name the check method per criterion — this line is
   what STATE.md `Verified facts` entries are built from.
+- **Fidelity claims: grep the harness for the reference literal first.**
+  Before accepting "reproduces the reference/published number exactly" as
+  evidence the harness is faithful, search the checking code for that
+  number as a hardcoded constant — a constant printed back is a tautology,
+  not validation, and it reads identically to a real reproduction.
 - Structural claims ("array is empty", "field absent", "N nodes",
   "no edges") must be backed by a parse/count (grep, `python3 -c`,
   `jq`), never eyeballed — a confident wrong aside reads identical to

@@ -1,23 +1,38 @@
 /* mindgap UI — vanilla JS against the /api contract. CDN globals: ForceGraph, ForceGraph3D, marked, DOMPurify. */
 'use strict';
 
-const TYPES = ['concept', 'definition', 'software', 'repo', 'page', 'paper', 'person', 'team', 'design', 'feature', 'learning', 'jira-ticket', 'todo', 'stub'];
+const TYPES = ['concept', 'definition', 'software', 'repo', 'page', 'paper', 'person', 'team', 'design', 'feature', 'learning', 'jira-ticket', 'todo', 'stub', 'finding', 'reference', 'verified-fact', 'project', 'idea', 'fact', 'process', 'decision', 'gotcha'];
 const RELS = ['relates_to', 'defines', 'implements', 'depends_on', 'cites', 'part_of', 'mentions', 'assigned_to', 'reported_by', 'resolved_by'];
 const TYPE_COLORS = {
-  concept: '#57c7a4',
-  definition: '#a78bfa',
-  software: '#5aa9e6',
-  repo: '#f4a261',
-  page: '#e9c46a',
-  paper: '#e76f51',
-  person: '#f28ab2',
-  team: '#9ae65a',
-  design: '#d946ef',
-  feature: '#f59e0b',
-  learning: '#10b981',
-  'jira-ticket': '#06b6d4',
-  todo: '#fb7185',
-  stub: '#5b6663',
+  // 2026-09-24: muted palette. Hue families borrowed from Obsidian's base colours (red 25,
+  // orange 65, yellow 100, green 150, cyan 195, blue 250, purple 295, pink 350 in OKLCH),
+  // chroma pulled to ~0.08 so nothing reads pastel or neon. Types are grouped by FAMILY, not
+  // spread round the hue circle: claims = greens/teals, sources = clays/sands, work = blues,
+  // judgment = purples, people = pinks. At a distance the family still reads when the exact
+  // type does not. Generated from OKLCH (L, C, h) triples; colour always pairs with a label.
+  concept: '#60a192',
+  definition: '#96d0d7',
+  software: '#77acce',
+  repo: '#b37f57',
+  page: '#dcb688',
+  paper: '#c98570',
+  person: '#dea4bc',
+  team: '#af789c',
+  design: '#ab91c9',
+  feature: '#9ccce3',
+  learning: '#7cbc8d',
+  'jira-ticket': '#4a8b9a',
+  todo: '#da8184',
+  stub: '#5d6565',
+  finding: '#70c2be',
+  reference: '#a5a16a',
+  'verified-fact': '#a3d9bb',
+  project: '#6287bf',
+  idea: '#c9c4f3',
+  fact: '#70996b',
+  process: '#a1afde',
+  decision: '#9570a5',
+  gotcha: '#d5bc70',
 };
 
 const SETTINGS_DEFAULTS = Object.freeze({
@@ -33,11 +48,11 @@ function loadSettings() {
 function saveSettings() { localStorage.setItem('mm.settings', JSON.stringify(state.settings)); }
 const nodeVal = (n) => 1.5 + (n._deg || 0) * 1.4;   // shared by .nodeVal and collide radius
 
-// timeline color override (state.timeline.colorMode): 'recency' fades older nodes toward
-// the dim token; 'provenance' buckets by created_by. Reads CSS tokens so it survives themes.
+// timeline color override (state.timeline.colorMode): 'recency' paints a heat ramp (old =
+// cold plum, new = hot cream); 'provenance' buckets by created_by.
 const PROV_COLORS = {
-  loop: '#57c7a4', skill: '#a78bfa', seed: '#e9c46a', claude: '#5aa9e6',
-  ui: '#f4a261', manual: '#9ae65a',
+  loop: '#7cbc8d', skill: '#ab91c9', seed: '#dcb688', claude: '#77acce',
+  ui: '#c98570', manual: '#a5a16a',
 };
 function provBucket(by) {
   const s = String(by || '').toLowerCase();
@@ -53,14 +68,18 @@ function recomputeRecency() {
 }
 function timelineNodeColor(n) {
   if (state.timeline.colorMode === 'provenance') return provBucket(n.created_by);
-  // recency: newest = full green token, oldest = dim, by created_at across cached span
-  const css = getComputedStyle(document.documentElement);
-  const green = (css.getPropertyValue('--green') || '#57c7a4').trim();
-  const dim = (css.getPropertyValue('--dim') || '#76847f').trim();
+  // recency: a heat ramp by created_at across the cached span -- oldest = cold plum,
+  // newest = hot cream. Theme-independent on purpose: heat reads on any dark base.
   const lo = state.timeline.recencyLo, hi = state.timeline.recencyHi, t = Date.parse(n.created_at);
-  if (lo == null || hi == null) return green;
-  if (!Number.isFinite(t) || hi === lo) return green;
-  return mixHex(dim, green, (t - lo) / (hi - lo));
+  if (lo == null || hi == null || !Number.isFinite(t) || hi === lo) return HEAT[HEAT.length - 1];
+  return heatAt((t - lo) / (hi - lo));
+}
+// Muted magma: the stops follow matplotlib's magma in hue order, with chroma pulled down so
+// the hot end is cream rather than neon yellow. Perceptually monotone in lightness.
+const HEAT = ['#3a3048', '#6a3f63', '#a0555f', '#c97c5d', '#e0ad73', '#efd9a6'];
+function heatAt(f) {
+  const x = Math.min(Math.max(f, 0), 1) * (HEAT.length - 1), i = Math.min(Math.floor(x), HEAT.length - 2);
+  return mixHex(HEAT[i], HEAT[i + 1], x - i);
 }
 function mixHex(a, b, f) {
   const p = (h) => { h = h.replace('#', ''); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
@@ -72,13 +91,16 @@ function mixHex(a, b, f) {
 // dark themes — each maps CSS custom properties (+ graph bg via --bg). Node type/community
 // colors stay fixed (they read on any dark base); themes swap chrome surfaces + accents.
 const THEMES = {
+  // Obsidian — graphite surfaces (#1e1e1e family) and Obsidian's violet accent, muted to match
+  // the 2026-09-24 type palette. Optional; the default stays editorial.
+  obsidian:  { '--bg': '#1a1a1a', '--bg-raised': '#242424', '--bg-panel': '#1f1f1f', '--line': '#333333', '--text': '#dcddde', '--dim': '#8c8c8c', '--green': '#9a8bd7', '--purple': '#d29f6d', '--danger': '#c87a70' },
   editorial: { '--bg': '#0b1210', '--bg-raised': '#101a17', '--bg-panel': '#0e1714', '--line': '#1d2925', '--text': '#d7e0dc', '--dim': '#76847f', '--green': '#57c7a4', '--purple': '#a78bfa', '--danger': '#e76f51' },
   midnight:  { '--bg': '#0a0f1a', '--bg-raised': '#0e1626', '--bg-panel': '#0c1320', '--line': '#1b2740', '--text': '#d6e0f0', '--dim': '#7385a3', '--green': '#5aa9e6', '--purple': '#8a7dff', '--danger': '#e76f7a' },
   graphite:  { '--bg': '#0e0e10', '--bg-raised': '#16161a', '--bg-panel': '#131316', '--line': '#2a2a30', '--text': '#e0ddd6', '--dim': '#8a857c', '--green': '#e0a458', '--purple': '#5ec8b8', '--danger': '#e8765a' },
   aubergine: { '--bg': '#120c16', '--bg-raised': '#1a1020', '--bg-panel': '#160d1b', '--line': '#2e2138', '--text': '#e6dcea', '--dim': '#988aa0', '--green': '#c77dff', '--purple': '#ff6ac1', '--danger': '#ff7a7a' },
   carbon:    { '--bg': '#050505', '--bg-raised': '#0d0d0f', '--bg-panel': '#0a0a0c', '--line': '#232327', '--text': '#ececf0', '--dim': '#80808a', '--green': '#57c7a4', '--purple': '#7aa2ff', '--danger': '#e76f51' },
 };
-const THEME_NAMES = { editorial: 'Editorial', midnight: 'Midnight', graphite: 'Graphite', aubergine: 'Aubergine', carbon: 'Carbon' };
+const THEME_NAMES = { obsidian: 'Obsidian', editorial: 'Editorial', midnight: 'Midnight', graphite: 'Graphite', aubergine: 'Aubergine', carbon: 'Carbon' };
 function themeBg() { return (THEMES[state.settings.theme] || THEMES.editorial)['--bg']; }
 function applyTheme(name) {
   const t = THEMES[name] || THEMES.editorial;
@@ -274,7 +296,7 @@ function drawLabel2d(n, ctx, scale) {
    flash is live we hold autoPauseRedraw(false) so the idle canvas keeps
    painting frames, then re-idle. */
 const ACT_POLL_MS = 1000, ACT_FADE_MS = 2600, ACT_SPREAD = 0.35;
-const ACT_COLORS = { read: '#57c7a4', write: '#e76f51' };
+const ACT_COLORS = { read: '#7cbc8d', write: '#c98570' };
 const act = { since: 0, primed: false, flashes: new Map(), painting: false };
 
 function hexAlpha(hex, a) {
@@ -1235,6 +1257,16 @@ chipsEl.innerHTML = TYPES.map((t) =>
      <span class="tlab"><i class="tport" style="--tc:${TYPE_COLORS[t]}"></i>${t}</span>
      <span class="track"><span class="bar"></span></span>
    </button>`).join('');
+// The chip row scrolls without a scrollbar; style.css fades its right edge so the hidden
+// chips are discoverable. Drop the fade once there is nothing left to scroll to.
+function updateChipScrollEnd() {
+  const atEnd = chipsEl.scrollLeft >= chipsEl.scrollWidth - chipsEl.clientWidth - 1;
+  chipsEl.toggleAttribute('data-scroll-end', atEnd);
+}
+chipsEl.addEventListener('scroll', updateChipScrollEnd, { passive: true });
+addEventListener('resize', updateChipScrollEnd);
+updateChipScrollEnd();
+
 // busbar histogram: fixed-width tracks, bar = sqrt(count/max) so types are comparable
 function updateChipShares() {
   const counts = {};

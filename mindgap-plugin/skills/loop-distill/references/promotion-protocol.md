@@ -30,8 +30,8 @@ bump its `used:`/`last:` instead of appending a near-duplicate.
 
 ## Verify on promotion
 
-Verification cost scales with reach. Only candidates bound for `CLAUDE.md`
-or `global-learnings.md` are re-verified.
+Verification cost scales with reach. Only candidates bound for `CLAUDE.md`,
+`global-learnings.md`, or a skill are re-verified.
 
 - One independent verifier subagent per candidate, `model:'opus'`.
 - The fact AND the check procedure are **inlined**. The verifier never

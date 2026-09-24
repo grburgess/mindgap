@@ -17,7 +17,7 @@ repo, or sequential makers otherwise.
 Non-git project → no worktrees → no parallel makers → run sequentially
 (Shape 1 mechanics, or single-lane workflow phases with no `isolation`).
 
-## Shape 1 · Subagent loop (default)
+## Shape 1 · Subagent loop
 
 Main agent is the orchestrator. Per iteration:
 
@@ -37,8 +37,8 @@ single UI.
 
 Use when N items can be made and verified independently.
 
-Fan-out makers route as "Bulk workers" from the GOAL.md routing table
-(the Shape 1 maker routes as "Maker (hard work)").
+Fan-out makers route per the GOAL.md §6 router: tag each item
+hard/normal/bulk, same as a Shape 1 maker.
 
 ```javascript
 export const meta = {

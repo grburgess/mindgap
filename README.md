@@ -197,6 +197,22 @@ Ten tools wrap the same `db` layer as the CLI: `mindgap_ingest` (batch write), `
 
 The graph is designed to be fed by recurring autonomous sessions that scan Confluence, GitHub, and arXiv. The protocol — read context first, ingest JSON with provenance (`created_by`, source URLs), wiki-link into the existing graph, export at session end — is defined in [AGENTS.md](AGENTS.md). Sessions can drive the graph via the CLI or the MCP tools above (the MCP's validation makes it the safer path for unattended writes).
 
+## Recall hooks (on by default)
+
+`mindgap install` registers two read-only Claude Code hooks in `~/.claude/settings.json`
+(idempotent; an existing entry for the same script is kept; the file is backed up once to
+`settings.json.bak`; skip with `--no-hooks`):
+
+- **SessionStart** → `bin/mindgap-recall-hook`: nodes matching the folder name, plus the newest
+  cross-project `global-learning` rows.
+- **UserPromptSubmit** → `bin/mindgap-prompt-recall-hook`: nodes matching the *words of the
+  prompt* (stemmed, title/tags/id, at least two words, decisions and gotchas weighted up), up to 6.
+  Session-start recall is newest-first, so in a busy project an old closed decision never makes
+  the cut; this one ranks by the question.
+
+Both are database reads, no model call, ~150 ms, and always exit 0. Turn either off in
+`~/.mindgap/capture.json`: `"recall": {"enabled": false}` (both) or `{"prompt": false}`.
+
 ## Self-learning capture
 
 > **Disabled by default.** mindgap ships the capture engine off, with an empty domain. Nothing fires until you opt in.

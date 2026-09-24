@@ -1,0 +1,6 @@
+#!/bin/sh
+# SessionStart hook: print a compact mindgap digest for the new session. Never blocks start.
+SELF=$0
+while [ -L "$SELF" ]; do SELF=$(readlink "$SELF"); done
+REPO=$(CDPATH= cd -- "$(dirname -- "$SELF")/.." && pwd)
+PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m mindgap.recall_hook "$@"

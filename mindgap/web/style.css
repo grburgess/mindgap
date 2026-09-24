@@ -201,7 +201,14 @@ button.ghost.port::before { width: 5px; height: 5px; margin-right: 6px; }
 
 /* ---------- row 2: taps busbar (live histogram) + vitals ---------- */
 
-#type-chips { display: flex; align-self: stretch; overflow-x: auto; scrollbar-width: none; }
+/* The row scrolls with no scrollbar, so nothing signals the chips past the right edge.
+   At 23 types, 11 sit off-screen. Fade the last 28px so the overflow is visible as an
+   affordance; the mask lifts once scrolled to the end. */
+#type-chips {
+  display: flex; align-self: stretch; overflow-x: auto; scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+}
+#type-chips:where([data-scroll-end]) { mask-image: none; }
 #type-chips::-webkit-scrollbar { display: none; }
 
 .chip {
