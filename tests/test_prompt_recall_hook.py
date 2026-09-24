@@ -75,6 +75,11 @@ class PromptRecallHookTest(unittest.TestCase):
         # distinct from "recall:<sid>" so usage_hook never double-credits it
         self.assertEqual(evt["actor"], "prompt-recall:S4")
 
+    def test_one_content_word_prompt_prints_nothing(self):
+        # a single shared word is noise, never recall
+        proc = self._run({"cwd": "/tmp/x", "session_id": "S7", "prompt": "widget"})
+        self.assertEqual(proc.stdout, "")
+
     def test_no_match_prints_nothing(self):
         proc = self._run({"cwd": "/tmp/x", "session_id": "S5", "prompt": "hello there"})
         self.assertEqual(proc.stdout, "")
