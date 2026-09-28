@@ -36,7 +36,7 @@ state = { view: {id, skill, title, created, workflows},
           events: [{seq, ts, run, kind, actor, phase, subject, data}],
           agents: [{workflow, agentId, label, phase, state, model, startedAt, summary, result}] }
 ```
-Event kinds: run.start/end, phase.start/end, workflow.bind, claim, verdict, ruling,
+Event kinds: run.start/end, phase.start/end, workflow.bind, agent.start/done, claim, verdict, ruling,
 decision, status, artifact, note, question.ask/answer, user.ask/answer, flag.contest, reply.
 Replies/threads link by `data.ref` (an event seq, or `"agent:<agentId>"`).
 Agent `label` is whatever the Workflow script passed as `opts.label` — idea-court uses
@@ -48,4 +48,5 @@ Agent `label` is whatever the Workflow script passed as `opts.label` — idea-co
 > + "Task: panel name '<name>', title '<title>'. <one paragraph: rows, columns, cells,
 > clicks, the one thing the user should notice>. Under 140 lines."
 
-Existing panels (reuse before generating): `panels/verdict-matrix.js` (claims × lenses).
+Existing panels (reuse before generating): `panels/verdict-matrix.js` (claims × lenses,
+idea-court), `panels/criteria-progress.js` (criteria × iterations, loop-system).

@@ -175,6 +175,24 @@ class WorkflowTailTest(_Env):
         self.assertEqual(done["state"], "done")
         self.assertEqual(done["label"], "a1")      # no label on disk without the state file
 
+    def test_emitted_agents_for_task_tool_subagents(self):
+        # loop-system makers/verifiers run as Task subagents, not Workflows: the
+        # orchestrator emits agent.start/agent.done and they join the agent list
+        runs.start("loop-system", "t", run_id="r1")
+        s = runs.emit("r1", "agent.start", {"id": "m1", "label": "maker:harness", "model": "opus"}, phase="1.1 make")
+        runs.emit("r1", "agent.start", {"id": "v1", "label": "verifier", "model": "opus"}, phase="1.1 verify")
+        d = runs.emit("r1", "agent.done", {"id": "m1", "headline": "harness written"})
+        by = {a["agentId"]: a for a in runs.agents("r1")}
+        self.assertEqual(by["m1"]["label"], "maker:harness")
+        self.assertEqual(by["m1"]["phase"], "1.1 make")
+        self.assertEqual(by["m1"]["state"], "done")
+        self.assertEqual((by["m1"]["startedAt"], by["m1"]["finishedAt"]), (s["ts"], d["ts"]))
+        self.assertEqual(by["m1"]["result"]["headline"], "harness written")
+        self.assertEqual(by["v1"]["state"], "running")
+        self.assertIsNone(by["v1"]["result"])
+        with self.assertRaises(ValueError):
+            runs.emit("r1", "agent.start", {"label": "no id"})
+
     def test_bind_rejects_missing_dir(self):
         runs.start("idea-court", "t", run_id="r1")
         with self.assertRaises(ValueError):

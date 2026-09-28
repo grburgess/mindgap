@@ -63,6 +63,14 @@ page loads panels on (re)load — tell the user to refresh. Reuse a panel from
 | before AskUserQuestion | `question.ask` | `text`, `options` (labels) |
 | after it returns | `question.answer` | `ref` = ask seq, `text` = choice |
 | files produced | `artifact` | `kind`, `path` |
+| Task-tool subagent starts / returns (no Workflow to bind) | `agent.start` / `agent.done` | `id`, `label`, `model` / `id`, `verdict`, `headline` |
+
+**Per-skill mapping.** idea-court: claims = ideas/claims, labels `<lens>:<claimId>`, panel
+`verdict-matrix.js`. loop-system: claims = GOAL §2 criteria `C<n>`, phases
+`"<s>.<i> make"` / `"<s>.<i> verify"`, makers `maker:<class>`, verifier `verifier`,
+per-criterion `verdict` with `data.iteration`, panel `criteria-progress.js`; the page
+switches to pass/fail vocabulary and one timeline lane per iteration. Once a run has
+`claim` events, a label suffix only attaches to a row when it names a declared claim.
 
 **4 · Handle inbox messages** (each Monitor event)
 - `user.ask` → answer from evidence (agent results: `curl -s …/api/runs/<id>/agents`), then
@@ -87,4 +95,5 @@ page loads panels on (re)load — tell the user to refresh. Reuse a panel from
   `journal.jsonl`; a run that hasn't written the state file yet shows agent ids only.
 - The run log is files, not the graph — no DB writes until the final report registration.
 - Replay a finished Workflow for demos/tests: `tools/live_view_replay.py <session-dir>
-  <wf_runId> --run-id <id> [--duration 60]`.
+  <wf_runId> --run-id <id> [--duration 60]`; a loop's history:
+  `tools/live_view_replay_loop.py <loop-dir> --run-id <id> [--duration 60]`.

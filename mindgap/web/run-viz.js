@@ -13,7 +13,10 @@
   // status palette — validated (dataviz validate_palette.js, dark, #161617): CVD/normal/contrast pass
   var C = { ok: '#30d158', warn: '#ffe14d', weak: '#ff8c1a', bad: '#ff375f', done: '#a1a1a6', na: '#48484a', run: '#64d2ff' };
   var L = { ok: 'verified', warn: 'caveats', weak: 'weakened', bad: 'refuted', done: 'done', na: 'pending', run: 'running' };
+  var LOOP_L = { ok: 'pass', bad: 'fail' };      // loop-system grades criteria, not claims
   var H = null, ST = null, live = false;
+  function isLoop() { return !!(ST && ST.view && ST.view.skill === 'loop-system'); }
+  function lab(k) { return (isLoop() && LOOP_L[k]) || L[k]; }
 
   function svg(tag, attrs, parent) {
     var el = document.createElementNS(NS, tag);
@@ -45,7 +48,7 @@
       var sw = div('lg-sw', null, item);
       sw.style.background = C[k];
       if (k === 'na') sw.style.background = 'transparent', sw.style.borderColor = '#6e6e73';
-      item.appendChild(document.createTextNode(L[k]));
+      item.appendChild(document.createTextNode(lab(k)));
     });
   }
 
@@ -120,7 +123,7 @@
         var item = div('lg-item', null, lg);
         var sw = div('lg-sw', null, item);
         sw.style.background = k === 'na' ? '#2c2c2e' : C[k];
-        item.appendChild(document.createTextNode(L[k] + ' '));
+        item.appendChild(document.createTextNode(lab(k) + ' '));
         var n = document.createElement('b'); n.textContent = '0'; item.appendChild(n);
         counts[k] = n;
       });
@@ -140,12 +143,13 @@
       rk.forEach(function (k) { var c = H.verdictClass(recon[k].data.overall || recon[k].data.verdict); cnt[c in cnt ? c : 'na']++; });
       var claims = st.events.filter(function (e) { return e.kind === 'claim' && !recon[e.subject]; }).length;
       cnt.na += claims;
-      pulse.cap.textContent = 'Verdict mix — reconciled, per claim';
+      pulse.cap.textContent = isLoop() ? 'Criteria — latest verifier verdict' : 'Verdict mix — reconciled, per claim';
     } else {
       agents.forEach(function (a) { var c = agentCls(a); cnt[c in cnt ? c : 'na']++; });
       pulse.cap.textContent = 'Verdict mix — per lens agent, until reconciled';
     }
     Object.keys(cnt).forEach(function (k) {
+      pulse.counts[k].parentNode.hidden = isLoop() && (k === 'warn' || k === 'weak') && !cnt[k];
       pulse.segs[k].style.flexGrow = cnt[k];
       pulse.segs[k].hidden = !cnt[k];
       tweenNum(pulse.counts[k], cnt[k]);
@@ -174,15 +178,20 @@
       if (e.kind === 'ruling') ruling = e;
       if (e.kind === 'decision') decision = e;
     });
+    // "<lens>:<subject>" labels attach to a claim row. Once the run declares claims, only a
+    // suffix naming a declared claim counts — "maker:perf-research" must not invent a row.
+    var declared = claims.length > 0;
     var parsed = st.agents.map(function (a) {
       var i = (a.label || '').indexOf(':');
       addPhase(a.phase || 'Agents');
-      var p = { a: a, subj: i > 0 ? a.label.slice(i + 1) : null, lens: i > 0 ? a.label.slice(0, i) : null };
+      var subj = i > 0 ? a.label.slice(i + 1) : null;
+      if (subj && declared && !(subj in cIdx)) subj = null;
+      var p = { a: a, subj: subj, lens: subj ? a.label.slice(0, i) : null };
       if (p.subj) addClaim(p.subj);
       return p;
     });
     var cols = [];
-    if (claims.length) cols.push({ key: '__claims', title: 'Claims' });
+    if (claims.length) cols.push({ key: '__claims', title: isLoop() ? 'Criteria' : 'Claims' });
     phases.forEach(function (p) { cols.push({ key: p, title: p }); });
     if (ruling || decision) cols.push({ key: '__out', title: 'Outcome' });
     function colOf(key) { for (var i = 0; i < cols.length; i++) if (cols[i].key === key) return i; return 0; }
@@ -253,7 +262,7 @@
     if (n.kind === 'agent') {
       var a = n.agent, r = a.result && typeof a.result === 'object' ? a.result : null;
       var dur = a.startedAt ? fmtDur((a.finishedAt || Date.now()) - a.startedAt) : null;
-      showTip(ev, a.label, [L[n.cls] + (H.verdictOf(a) ? ' · ' + H.verdictOf(a) : ''), dur && ((a.finishedAt ? 'took ' : 'running ') + dur),
+      showTip(ev, a.label, [lab(n.cls) + (H.verdictOf(a) ? ' · ' + H.verdictOf(a) : ''), dur && ((a.finishedAt ? 'took ' : 'running ') + dur),
         r && r.headline ? trunc(r.headline, 200) : null, 'click for the full result']);
     } else if (n.kind === 'claim') {
       showTip(ev, n.title, [n.verdict ? 'reconciled: ' + n.verdict : 'not reconciled yet', trunc(n.text, 200)]);
@@ -269,9 +278,9 @@
       var s = svg('svg', { class: 'mapsvg', role: 'img', 'aria-label': 'Flow of the run: claims, agents, ruling, decision' }, host);
       map = { svg: s, head: svg('g', {}, s), edges: svg('g', {}, s), parts: svg('g', {}, s), nodes: svg('g', {}, s),
               n: {}, e: {}, bursts: [] };
-      legend(document.getElementById('map-legend'), ['run', 'ok', 'warn', 'weak', 'bad', 'done', 'na']);
+      legend(document.getElementById('map-legend'), isLoop() ? ['run', 'ok', 'bad', 'done', 'na'] : ['run', 'ok', 'warn', 'weak', 'bad', 'done', 'na']);
     }
-    var W = Math.max(680, host.clientWidth || 680), lay = layout(g, W);
+    var W = Math.max(680, host.clientWidth || 680, g.cols.length * 112), lay = layout(g, W);
     map.svg.setAttribute('viewBox', '0 0 ' + W + ' ' + lay.H);
     map.svg.setAttribute('width', W); map.svg.setAttribute('height', lay.H);
     // column headers
@@ -282,7 +291,9 @@
       var t = svg('text', { x: x, y: 16, class: 'mhead', 'text-anchor': 'middle' }, map.head);
       t.textContent = c.title;
       var t2 = svg('text', { x: x, y: 31, class: 'msub', 'text-anchor': 'middle' }, map.head);
-      t2.textContent = c.key === '__claims' ? col.filter(function (m) { return m.verdict; }).length + ' of ' + col.length + ' reconciled'
+      t2.textContent = c.key === '__claims'
+        ? (isLoop() ? col.filter(function (m) { return m.cls === 'ok'; }).length + ' of ' + col.length + ' passing'
+                    : col.filter(function (m) { return m.verdict; }).length + ' of ' + col.length + ' reconciled')
         : c.key === '__out' ? '' : fin + ' of ' + col.length + ' done';
     });
     // nodes (diffed: keep elements so colour/position transitions animate)
@@ -417,17 +428,27 @@
         showTip(ev, '+' + fmtDur(t - tl.t0), [nRun + ' working · ' + nDone + ' returned']);
       });
       s.addEventListener('mouseleave', function () { tl.cross.style.display = 'none'; hideTip(); });
-      legend(document.getElementById('tl-legend'), ['run', 'ok', 'warn', 'weak', 'bad', 'done']);
+      legend(document.getElementById('tl-legend'), isLoop() ? ['run', 'ok', 'bad', 'done'] : ['run', 'ok', 'warn', 'weak', 'bad', 'done']);
     }
-    var phases = [];
-    agents.forEach(function (a) { var p = a.phase || 'Agents'; if (phases.indexOf(p) < 0) phases.push(p); });
-    var rows = [];
-    phases.forEach(function (p) {
-      rows.push({ head: p });
-      agents.filter(function (a) { return (a.phase || 'Agents') === p; })
-        .sort(function (a, b) { return a.startedAt - b.startedAt; })
-        .forEach(function (a) { rows.push({ a: a }); });
-    });
+    // rows: a phase header, then one lane per agent. Loop runs instead get one lane per
+    // iteration ("2.1 make" + "2.1 verify" share lane "2.1"), maker and verifier side by side.
+    var rows = [], lanes = {};
+    if (isLoop()) {
+      agents.slice().sort(function (a, b) { return a.startedAt - b.startedAt; }).forEach(function (a) {
+        var key = String(a.phase || 'Agents').replace(/\s+(make|verify)$/, '');
+        if (!lanes[key]) rows.push(lanes[key] = { lane: key, agents: [] });
+        lanes[key].agents.push(a);
+      });
+    } else {
+      var phases = [];
+      agents.forEach(function (a) { var p = a.phase || 'Agents'; if (phases.indexOf(p) < 0) phases.push(p); });
+      phases.forEach(function (p) {
+        rows.push({ head: p });
+        agents.filter(function (a) { return (a.phase || 'Agents') === p; })
+          .sort(function (a, b) { return a.startedAt - b.startedAt; })
+          .forEach(function (a) { rows.push({ lane: a.label, agents: [a] }); });
+      });
+    }
     var W = Math.max(680, host.clientWidth || 680), gut = Math.min(220, W * 0.3), rail = 26, rowH = 16;
     var Hh = rail + rows.reduce(function (s2, r) { return s2 + (r.head ? 22 : rowH); }, 0) + 26;
     tl.W = W; tl.gut = gut; tl.H = Hh; tl.rail = rail;
@@ -443,15 +464,20 @@
         svg('line', { x1: gut, x2: W - 16, y1: y + 11, y2: y + 11, class: 'tl-sep' }, tl.lanes);
         y += 22; return;
       }
-      var a = r.a, cls = agentCls(a);
-      var lab = svg('text', { x: 8, y: y + 11, class: 'tl-label' }, tl.lanes); lab.textContent = trunc(a.label, Math.floor(gut / 6.6));
+      var laneText = isLoop() ? r.lane + ' · ' + String(r.agents[0].label).replace(/^maker:/, '') : r.lane;
+      var lab = svg('text', { x: 8, y: y + 11, class: 'tl-label' }, tl.lanes); lab.textContent = trunc(laneText, Math.floor(gut / 6.6));
+      r.agents.forEach(function (a) { laneBar(a, y); });
+      y += rowH;
+    });
+    function laneBar(a, y) {
+      var cls = agentCls(a);
       var rec = tl.bars[a.agentId];
       if (!rec) {
         rec = tl.bars[a.agentId] = { el: svg('rect', { height: 8, rx: 4, class: 'tl-bar' }, tl.marks) };
         rec.el.addEventListener('mousemove', function (ev) {
           ev.stopPropagation();
           var aa = rec.a;
-          showTip(ev, aa.label, [L[agentCls(aa)] + (H.verdictOf(aa) ? ' · ' + H.verdictOf(aa) : ''),
+          showTip(ev, aa.label, [lab(agentCls(aa)) + (H.verdictOf(aa) ? ' · ' + H.verdictOf(aa) : ''),
             (aa.finishedAt ? 'took ' : 'running ') + fmtDur((aa.finishedAt || Date.now()) - aa.startedAt)]);
         });
         rec.el.addEventListener('mouseleave', hideTip);
@@ -461,8 +487,7 @@
       rec.el.setAttribute('y', rec.y);
       rec.el.style.fill = C[cls];
       rec.el.classList.toggle('running', cls === 'run');
-      y += rowH;
-    });
+    }
     Object.keys(tl.bars).forEach(function (id) { if (!seen[id]) { tl.bars[id].el.remove(); delete tl.bars[id]; } });
     // event markers on the rail (+ a faint rule through the lanes for phase/ruling/decision)
     tl.evs = st.events.filter(function (e) { return MARKS[e.kind]; });
@@ -500,7 +525,9 @@
     if (!tl || !ST || !tl.W) return;
     var starts = ST.agents.filter(function (a) { return a.startedAt; }).map(function (a) { return a.startedAt; });
     var t0 = Math.min.apply(null, starts.concat(ST.events.length ? [ST.events[0].ts] : []));
-    var ends = ST.agents.map(function (a) { return a.finishedAt || 0; }).concat(ST.events.map(function (e) { return e.ts; }));
+    // span = agent activity + marked events only; a later bookkeeping event (report export) must not stretch it
+    var ends = ST.agents.map(function (a) { return a.finishedAt || a.startedAt || 0; })
+      .concat(ST.events.filter(function (e) { return MARKS[e.kind]; }).map(function (e) { return e.ts; }));
     // follow the clock only while agents work; an idle open run shouldn't squash the bars leftward
     var working = ST.agents.some(function (a) { return a.state === 'running' && a.result == null; });
     var t1 = live && working ? now : Math.max.apply(null, ends);
