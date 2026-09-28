@@ -217,6 +217,20 @@ schedules NO wakeup. Auto-continuation keys ONLY on GOAL §2 criteria + the
 §4 ceiling — never an execution-time proxy (tempted to halt on a metric
 not in §2? re-gate it into §2 or drop it).
 
+**Live view (default-on; skip on "no live view").** At session start invoke the
+`live-view` skill: `run start --skill loop-system --title "<loop> · session <N>"`, give
+the user the URL, arm the inbox Monitor, install
+`live-view/references/panels/criteria-progress.js`, and emit one `claim` per GOAL §2
+criterion (subject `C<n>`) plus a `verdict` for each criterion's status carried in from
+STATE (`data.iteration` = the last session's iteration) so the page opens with the real
+starting state. Per iteration: `phase.start "<s>.<i> make"` → the maker (Workflow engine:
+`run bind` the transcriptDir; Task engine: `agent.start`/`agent.done` with
+`label "maker:<class>"`) → `phase.start "<s>.<i> verify"` → the verifier the same way
+(`agent.done` `verdict` PASS/FAIL, `headline` = gaps) → one `verdict` per criterion it
+graded (`data.iteration`). A page `flag.contest` joins the next maker's gap list; it never
+overrides the verifier. SESSION END: `decision` go (complete) / hold (running) / no-go
+(escalated), `run.end`, `run report`.
+
 Each iteration:
 
 (Default engine = workflow: an "iteration" is a workflow run — fan-out

@@ -33,6 +33,7 @@ KINDS = {
     "question.ask", "question.answer",            # agent -> user
     "user.ask", "user.answer", "flag.contest",   # user -> agent (page inbox)
     "reply",                                     # agent's answer to a user.ask
+    "agent.start", "agent.done",                 # Task-tool subagents (no Workflow transcript to tail)
 }
 USER_KINDS = {"user.ask", "user.answer", "flag.contest"}
 
@@ -73,6 +74,8 @@ def emit(run_id, kind, data=None, actor="orchestrator", phase=None, subject=None
     data = {} if data is None else data
     if not isinstance(data, dict):
         raise ValueError("event data must be a JSON object")
+    if kind in ("agent.start", "agent.done") and not data.get("id"):
+        raise ValueError(f"{kind} needs data.id")
     with open(d / "events.jsonl", "a+", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         f.seek(0)
@@ -217,8 +220,26 @@ def _workflow_agents(tdir: Path) -> list:
     return agents
 
 
+def _emitted_agents(run_id) -> list:
+    """Agents the orchestrator announced itself (agent.start / agent.done), in the
+    same shape as Workflow agents so the page treats both alike."""
+    out = {}
+    for e in events(run_id):
+        d = e.get("data") or {}
+        if e["kind"] == "agent.start":
+            out[d["id"]] = {"workflow": None, "agentId": d["id"], "label": d.get("label") or d["id"],
+                            "phase": e.get("phase"), "state": "running", "model": d.get("model"),
+                            "startedAt": e["ts"], "summary": None, "finishedAt": None, "result": None}
+        elif e["kind"] == "agent.done" and d["id"] in out:
+            a = out[d["id"]]
+            result = d.get("result") if isinstance(d.get("result"), dict) else \
+                {k: d[k] for k in ("verdict", "headline", "gaps") if k in d}
+            a.update(state="done", finishedAt=e["ts"], result=result, summary=d.get("verdict"))
+    return list(out.values())
+
+
 def agents(run_id) -> list:
-    return [a for t in view(run_id)["workflows"] for a in _workflow_agents(Path(t))]
+    return [a for t in view(run_id)["workflows"] for a in _workflow_agents(Path(t))] + _emitted_agents(run_id)
 
 
 # ---- frozen report ----------------------------------------------------------
