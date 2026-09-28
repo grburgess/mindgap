@@ -88,24 +88,52 @@ class RunsTest(_Env):
         with self.assertRaises(ValueError):
             runs.post_inbox("r1", "user.ask", "   ")
 
-    def test_follow_inbox_yields_new_messages_only(self):
-        runs.start("idea-court", "t", run_id="r1")
-        runs.post_inbox("r1", "user.ask", "old")        # before follow starts: skipped
+    def _drain(self, rid, secs=0.6):
+        """Follow like the CLI does — keep iterating until the Monitor-style deadline —
+        so the cursor advances after each hand-off exactly as in production."""
         got = []
 
         def reader():
-            for line in runs.follow_inbox("r1", poll=0.02, max_seconds=2):
+            for line in runs.follow_inbox(rid, poll=0.02, max_seconds=secs):
                 got.append(json.loads(line))
-                if len(got) == 2:
-                    return
 
         t = threading.Thread(target=reader)
         t.start()
+        return t, got
+
+    def test_follow_inbox_delivers_backlog_then_tails(self):
+        runs.start("idea-court", "t", run_id="r1")
+        runs.post_inbox("r1", "user.ask", "before any follower")   # nothing may be lost
+        t, got = self._drain("r1", secs=1)
         time.sleep(0.1)
         runs.post_inbox("r1", "user.ask", "first")
         runs.post_inbox("r1", "flag.contest", "second", ref=2)
         t.join(3)
-        self.assertEqual([m["text"] for m in got], ["first", "second"])
+        self.assertEqual([m["text"] for m in got], ["before any follower", "first", "second"])
+
+    def test_follow_inbox_resumes_across_rearm_exactly_once(self):
+        # court ruling 2026-09-28: a Monitor expires every <=30 min; messages posted
+        # between expiry and re-arm must arrive on re-arm, and nothing twice
+        runs.start("idea-court", "t", run_id="r1")
+        runs.post_inbox("r1", "user.ask", "one")
+        t, got = self._drain("r1")
+        t.join(3)
+        self.assertEqual([m["text"] for m in got], ["one"])
+        runs.post_inbox("r1", "user.ask", "posted while nobody follows")   # the expiry window
+        t, got = self._drain("r1")
+        t.join(3)
+        self.assertEqual([m["text"] for m in got], ["posted while nobody follows"])
+        t, got = self._drain("r1")                           # third arm: nothing new
+        t.join(3)
+        self.assertEqual(got, [])
+
+    def test_start_records_session_id(self):
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "sess-abc"
+        try:
+            runs.start("idea-court", "t", run_id="r1")
+        finally:
+            del os.environ["CLAUDE_CODE_SESSION_ID"]
+        self.assertEqual(runs.view("r1")["session"], "sess-abc")
 
     def test_list_runs_newest_first(self):
         runs.start("a", "one", run_id="r1")
@@ -153,6 +181,23 @@ class WorkflowTailTest(_Env):
         self.assertIsNone(agents[1]["result"])
         self.assertEqual(agents[1]["state"], "running")
         self.assertEqual(runs.events("r1")[-1]["kind"], "workflow.bind")
+
+    def test_live_labels_from_journal_started_lines(self):
+        # current Claude Code: label + phase ride on journal `started` lines (and meta.json
+        # description/workflowPhase) from spawn; the session state file only lands at the end
+        runs.start("idea-court", "t", run_id="r1")
+        tdir = _fake_workflow(Path(self.tmp.name), with_state=False)
+        (tdir / "journal.jsonl").write_text("".join(json.dumps(j) + "\n" for j in [
+            {"type": "launched"},
+            {"type": "started", "key": "k1", "agentId": "a1", "label": "evidence:C1", "phase": "Verify"},
+            {"type": "started", "key": "k2", "agentId": "a2"},
+            {"type": "result", "key": "k1", "agentId": "a1", "result": {"verdict": "WEAKENED"}}]))
+        (tdir / "agent-a2.meta.json").write_text(json.dumps(
+            {"agentType": "workflow-subagent", "description": "substrate:C1", "workflowPhase": "Verify", "model": "opus"}))
+        runs.bind_workflow("r1", str(tdir))
+        by = {a["agentId"]: a for a in runs.agents("r1")}
+        self.assertEqual((by["a1"]["label"], by["a1"]["phase"], by["a1"]["state"]), ("evidence:C1", "Verify", "done"))
+        self.assertEqual((by["a2"]["label"], by["a2"]["phase"], by["a2"]["model"]), ("substrate:C1", "Verify", "opus"))
 
     def test_finished_at_from_agent_transcript_mtime(self):
         runs.start("idea-court", "t", run_id="r1")

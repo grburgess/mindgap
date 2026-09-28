@@ -36,8 +36,11 @@ curl -sf localhost:8765/api/runs >/dev/null || echo "need server"
 - `mindgap run start --skill <skill> --title "<what is being decided>" [--port N]`
   → prints the run id + URL. **Give the user the URL in your next message.**
 - Arm the back-channel: `Monitor` with command `mindgap run inbox <run-id>`,
-  `timeout_ms` 1800000, description `live-view inbox <run-id>`. Re-arm on expiry for the
-  life of the run. Each notification line is one page message (JSON).
+  `timeout_ms` 1800000, description `live-view inbox <run-id>`. **Re-arm immediately on
+  expiry** for the life of the run — `run inbox` resumes from a saved cursor, so messages
+  posted while it was down arrive on re-arm, each exactly once. Each notification LINE is
+  one page message (JSON); messages <200 ms apart batch into one notification — reply to
+  every line, not just the first.
 
 **2 · Bespoke panels** (optional; worth it when the task has a natural matrix/graph the
 court doesn't show — claims × lenses, criteria gauges, advocate positions)
@@ -69,7 +72,10 @@ page loads panels on (re)load — tell the user to refresh. Reuse a panel from
 `verdict-matrix.js`. loop-system: claims = GOAL §2 criteria `C<n>`, phases
 `"<s>.<i> make"` / `"<s>.<i> verify"`, makers `maker:<class>`, verifier `verifier`,
 per-criterion `verdict` with `data.iteration`, panel `criteria-progress.js`; the page
-switches to pass/fail vocabulary and one timeline lane per iteration. Once a run has
+switches to pass/fail vocabulary and one timeline lane per iteration. deep-research: claims
+= gaps `G<n>`, gap `verdict`s ADDRESSED / COVERED / DEFERRED / STRUCK, mostly no agents —
+the map is gaps → decision and the timeline's "Waiting on you" lanes (one per
+`question.ask`, ask → answer) carry the story. Every skill gets those question lanes. Once a run has
 `claim` events, a label suffix only attaches to a row when it names a declared claim.
 
 **4 · Handle inbox messages** (each Monitor event)
@@ -96,4 +102,6 @@ switches to pass/fail vocabulary and one timeline lane per iteration. Once a run
 - The run log is files, not the graph — no DB writes until the final report registration.
 - Replay a finished Workflow for demos/tests: `tools/live_view_replay.py <session-dir>
   <wf_runId> --run-id <id> [--duration 60]`; a loop's history:
-  `tools/live_view_replay_loop.py <loop-dir> --run-id <id> [--duration 60]`.
+  `tools/live_view_replay_loop.py <loop-dir> --run-id <id> [--duration 60]`; a
+  deep-research session from its transcript: `tools/live_view_replay_session.py
+  <session.jsonl> --run-id <id>`.
