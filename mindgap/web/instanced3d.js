@@ -11,7 +11,8 @@
    a small MeshBasicMaterial sphere with userData.bloom=true layered on top so only they glow.
 
    ctx (from app.js): { nodes(), links(), nodeColorFor(n), linkColorFor(l), nodeVal(n), hubIds()→Set,
-   onHover(node|null), onClick(node), nodeLabel(n)→tooltip HTML, getSettings()→state.settings }.
+   onHover(node|null), onClick(node), nodeLabel(n)→tooltip HTML, getSettings()→state.settings,
+   bg()→theme background css (recall-firing dims toward it) }.
    THREE from window.THREE (ESM shim in index.html). 3D-only. */
 'use strict';
 (function () {
@@ -70,7 +71,7 @@
       if (hasPos(n)) { dummy.position.set(n.x, n.y, n.z || 0); dummy.scale.setScalar(radiusOf(n)); }
       else { dummy.position.set(0, 0, 0); dummy.scale.setScalar(0); }   // hidden until positioned
       dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix);
-      inst.setColorAt(i, parseColor(ctx.nodeColorFor(n)));
+      inst.setColorAt(i, colorOf(n));
     }
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
@@ -118,6 +119,7 @@
     // E. HUB BLOOM: small individual spheres for the hub nodes so only they glow (the big instanced
     // mesh stays untagged). Positions synced in the loop; colors are static (hub hue on build).
     buildHubs();
+    buildFiring();
   }
 
   function buildHubs() {
@@ -157,6 +159,7 @@
       const css = String(ctx.linkColorFor(links[i]));            // rgba() with per-edge alpha (opacity/highlight)
       const col = parseColor(css);
       let a = 1; if (css.indexOf('rgba') === 0) { const m = css.match(/[\d.]+/g); if (m && m.length >= 4) a = +m[3]; }
+      if (fired.size) { if (litLinks.has(links[i])) { col.setRGB(0.47, 1.0, 0.84); a = 1; } else a = Math.min(a, 0.05); }
       const o = i * 8;                                            // 2 verts × RGBA(4)
       c[o] = c[o + 4] = col.r; c[o + 1] = c[o + 5] = col.g; c[o + 2] = c[o + 6] = col.b; c[o + 3] = c[o + 7] = a;
     }
@@ -165,9 +168,10 @@
 
   function clear() {
     const rm = (o) => { if (graph && o) { graph.scene().remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); } };
-    rm(inst); rm(lines); rm(photons); rm(arrows);
+    rm(inst); rm(lines); rm(photons); rm(arrows); rm(pulsePts); rm(haloPts);
     for (const m of hubMeshes) rm(m);
     inst = null; lines = null; photons = null; photonPhase = null; arrows = null; hubMeshes = []; hubMap = [];
+    pulsePts = null; haloPts = null;
   }
 
   // C. POSITION SYNC — copy node x/y/z into instance matrices + line endpoints ONLY on frames where
@@ -241,10 +245,11 @@
     if (dirty) {
       for (let i = 0; i < hubMeshes.length; i++) {
         const n = hubMap[i], m = hubMeshes[i];
-        if (hasPos(n)) { m.visible = true; m.position.set(n.x, n.y, n.z || 0); m.scale.setScalar(radiusOf(n) * (HUB_R * 1.05)); }
+        if (hasPos(n)) { m.visible = hubVisible(n); m.position.set(n.x, n.y, n.z || 0); m.scale.setScalar(radiusOf(n) * (HUB_R * 1.05)); }
         else m.visible = false;
       }
     }
+    stepFiring(performance.now(), dirty);
     if ((frame++ % 30) === 0 && needSphere) {
       needSphere = false;                    // recompute once per dirty burst (and once after it ends)
       inst.computeBoundingSphere();          // InstancedMesh (not geometry) sphere — hover raycast hit-test uses this
@@ -364,7 +369,7 @@
   }
   function handleClick(ev) {
     if (justDragged) { justDragged = false; return; }              // ignore the click that ends a drag
-    const n = nodeAt(ev); if (n) ctx.onClick(n);
+    const n = nodeAt(ev); if (n) ctx.onClick(n); else if (fired.size) clearFiring();   // empty-space click ends a recall view
   }
 
   function bindEvents() {
@@ -397,9 +402,186 @@
   function syncColors() {
     if (!inst || !ctx) return;
     const nodes = ctx.nodes();
-    for (let i = 0; i < nodes.length; i++) inst.setColorAt(i, parseColor(ctx.nodeColorFor(nodes[i])));
+    for (let i = 0; i < nodes.length; i++) inst.setColorAt(i, colorOf(nodes[i]));
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     writeLineColors();
+  }
+
+
+  // G. RECALL FIRING — ported from the fly-through talk (flythrough.js fire/pathTo/stepPulses/stepHalos).
+  // fire(ids): a session's recall digest lights up live. The first id is the subject; pulses walk the
+  // shortest path (≤5 hops) from it to every other recalled node, which flashes, swells to 1.45× and
+  // keeps a breathing halo; the paths stay lit as moving bead chains; everything else sinks toward the
+  // background. Persists until clearFiring() (empty-space click, Esc, or the next recall). flash(ids):
+  // the light version for ordinary MCP touches — swell + whiten, no dimming. Per-frame cost is
+  // O(fired + beads) and zero while nothing is firing. Hue-keeping dim needs ~0.93 toward bg, not 0.7:
+  // the Lambert ambient lifts dimmed colours back up. Halos need depthTest:false or spheres hide them.
+  const F = { HOP_MS: 170, STAGGER_MS: 110, PULSE_MS: 480, FLASH_MS: 900, BEADS: 16, PULSES: 2400, HALOS: 64, DIM: 0.93, BURST: 8 };
+  const fired = new Map();                  // node id -> fire time (ms): the recalled set
+  const flashes = new Map();                // node id -> t0: light flashes (no dimming), dropped when done
+  const settled = new Set();                // fired ids whose flash finished and whose final colour is written
+  const litLinks = new Set();               // link OBJECTS on a firing path (survive rebuilds)
+  let pulses = [];                          // {a, b, t0}: node objects + start time
+  let pulsePts = null, haloPts = null, idNode = null, idIx = null, _white = null, _bg = null;
+
+  function colorOf(n) {
+    const c = parseColor(ctx.nodeColorFor(n));
+    if (fired.size && !fired.has(n.id)) c.lerp(_bg || (_bg = parseColor(ctx.bg ? ctx.bg() : '#000')), F.DIM);
+    return c;
+  }
+  function hubVisible(n) { return hasPos(n) && (!fired.size || fired.has(n.id)); }   // a glowing hub would punch through the dim
+  function applyHubVis() { for (let i = 0; i < hubMeshes.length; i++) hubMeshes[i].visible = hubVisible(hubMap[i]); }
+
+  function buildFiring() {
+    const T = THREE();
+    idNode = new Map(ctx.nodes().map((n) => [n.id, n]));
+    idIx = new Map(ctx.nodes().map((n, i) => [n.id, i]));   // instance index; fixed until the next rebuild
+    const pg = new T.BufferGeometry();
+    pg.setAttribute('position', new T.BufferAttribute(new Float32Array(F.PULSES * 3), 3));
+    pg.setDrawRange(0, 0);
+    pulsePts = new T.Points(pg, new T.PointsMaterial({ color: 0xc8fff0, size: 9, sizeAttenuation: true,
+      transparent: true, opacity: 0.95, blending: T.AdditiveBlending, depthWrite: false }));
+    pulsePts.frustumCulled = false;
+    graph.scene().add(pulsePts);
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(0.2, 'rgba(125,255,214,.55)'); g.addColorStop(1, 'rgba(125,255,214,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+    const hg = new T.BufferGeometry();
+    hg.setAttribute('position', new T.BufferAttribute(new Float32Array(F.HALOS * 3), 3));
+    hg.setDrawRange(0, 0);
+    haloPts = new T.Points(hg, new T.PointsMaterial({ map: new T.CanvasTexture(c), size: 80, sizeAttenuation: true,
+      transparent: true, opacity: 0.9, blending: T.AdditiveBlending, depthWrite: false, depthTest: false }));
+    haloPts.frustumCulled = false;
+    graph.scene().add(haloPts);
+    _white = new T.Color(0xffffff);
+    settled.clear();                        // rebuilt mesh has plain colours; flashes re-assert via markDirty
+  }
+
+  const endId = (e) => (e && typeof e === 'object' ? e.id : e);
+  function adjacency() {                    // id -> [[neighbour id, link]], built per fire (rare; O(E))
+    const adj = new Map();
+    for (const l of ctx.links()) {
+      const s = endId(l.source), t = endId(l.target);
+      if (!adj.has(s)) adj.set(s, []); if (!adj.has(t)) adj.set(t, []);
+      adj.get(s).push([t, l]); adj.get(t).push([s, l]);
+    }
+    return adj;
+  }
+  function pathTo(adj, from, to, maxHops = 5) {   // BFS -> [[id, link-into-id]...]; unreachable -> just [to]
+    if (from === to) return [[to, null]];
+    const prev = new Map([[from, null]]);
+    let ring = [from];
+    for (let d = 0; d < maxHops && ring.length && !prev.has(to); d++) {
+      const next = [];
+      for (const u of ring) for (const [v, l] of adj.get(u) || []) if (!prev.has(v)) { prev.set(v, [u, l]); next.push(v); }
+      ring = next;
+    }
+    if (!prev.has(to)) return [[to, null]];
+    const p = [];
+    for (let v = to; v != null; v = prev.get(v) ? prev.get(v)[0] : null) p.unshift([v, prev.get(v) ? prev.get(v)[1] : null]);
+    return p;
+  }
+  function spawn(aId, bId, t0) {
+    const a = idNode.get(aId), b = idNode.get(bId);
+    if (!a || !b) return;
+    if (pulses.length >= F.PULSES) pulses.shift();
+    pulses.push({ a, b, t0 });
+  }
+
+  function fire(ids) {
+    if (!inst || !idNode) return;
+    const live = [...new Set(ids)].filter((id) => idNode.has(id));   // filtered-out ids are silently skipped
+    if (!live.length) return;
+    resetFiring();
+    const adj = adjacency(), now = performance.now(), from = live[0];
+    const hit = (id, t) => { if (!fired.has(id)) fired.set(id, t); };
+    const burst = (id, t) => (adj.get(id) || []).slice(0, F.BURST).forEach(([nb], j) => spawn(id, nb, t + 60 + j * 25));
+    hit(from, now); burst(from, now);
+    live.slice(1).forEach((id, j) => {
+      const path = pathTo(adj, from, id), t0 = now + (j + 1) * F.STAGGER_MS;
+      for (let k = 1; k < path.length; k++) {
+        litLinks.add(path[k][1]);
+        spawn(path[k - 1][0], path[k][0], t0 + (k - 1) * F.HOP_MS);
+        if (k < path.length - 1) hit(path[k][0], t0 + k * F.HOP_MS);   // relay nodes light as the pulse passes
+      }
+      const tHit = t0 + (path.length - 1) * F.HOP_MS;
+      hit(id, tHit); burst(id, tHit);
+    });
+    syncColors(); applyHubVis();
+  }
+  function flash(ids) {
+    if (!inst || !idNode) return;
+    const now = performance.now();
+    for (const id of ids) if (idNode.has(id) && !fired.has(id)) flashes.set(id, now);
+  }
+  function resetFiring() {                  // drop state + force every scale back to base on the next frame
+    fired.clear(); litLinks.clear(); settled.clear(); pulses = [];
+    markDirty();
+  }
+  function clearFiring() {
+    if (!fired.size) return;
+    resetFiring();
+    if (inst) { syncColors(); applyHubVis(); }
+  }
+
+  function stepFiring(now, dirty) {
+    if (!fired.size && !flashes.size) {
+      if (pulses.length) pulses = [];
+      if (pulsePts && pulsePts.geometry.drawRange.count) { pulsePts.geometry.setDrawRange(0, 0); haloPts.geometry.setDrawRange(0, 0); }
+      return;
+    }
+    // pulses in flight, then the lit paths' bead chains
+    const pp = pulsePts.geometry.attributes.position.array;
+    let w = 0;
+    for (const p of pulses) {
+      const u = (now - p.t0) / F.PULSE_MS;
+      if (u < 0 || u > 1 || !hasPos(p.a) || !hasPos(p.b)) continue;
+      pp[w * 3] = p.a.x + (p.b.x - p.a.x) * u; pp[w * 3 + 1] = p.a.y + (p.b.y - p.a.y) * u;
+      pp[w * 3 + 2] = (p.a.z || 0) + ((p.b.z || 0) - (p.a.z || 0)) * u; w++;
+    }
+    for (const l of litLinks) {
+      const s = l.source, t = l.target;
+      if (!hasPos(s) || !hasPos(t)) continue;
+      for (let k = 0; k < F.BEADS && w < F.PULSES; k++, w++) {
+        const u = ((now / 900) + k / F.BEADS) % 1;
+        pp[w * 3] = s.x + (t.x - s.x) * u; pp[w * 3 + 1] = s.y + (t.y - s.y) * u;
+        pp[w * 3 + 2] = (s.z || 0) + ((t.z || 0) - (s.z || 0)) * u;
+      }
+    }
+    pulsePts.geometry.setDrawRange(0, w);
+    pulsePts.geometry.attributes.position.needsUpdate = true;
+    while (pulses.length && now - pulses[0].t0 > F.PULSE_MS + 4000) pulses.shift();
+    // swell + whiten: fired nodes settle at 1.45×, light flashes return to 1×. Matrices are rewritten
+    // only while a flash runs or the dirty loop just reset every scale to base.
+    let mat = false, col = false;
+    const swell = (id, t0, rest, keep) => {
+      const n = idNode.get(id), u = (now - t0) / F.FLASH_MS;
+      if (!n || u < 0 || !hasPos(n)) return;
+      const live = u <= 1;
+      if (!live && !dirty && settled.has(id)) return;
+      const i = idIx.get(id);
+      dummy.position.set(n.x, n.y, n.z || 0);
+      dummy.scale.setScalar(radiusOf(n) * (live ? rest + 1.6 * (1 - u) ** 2 : rest));
+      dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix); mat = true;
+      if (live) { inst.setColorAt(i, colorOf(n).lerp(_white, (1 - u) * 0.85)); col = true; }
+      else if (!settled.has(id)) { inst.setColorAt(i, colorOf(n)); col = true; if (keep) settled.add(id); }
+    };
+    for (const [id, t0] of fired) swell(id, t0, 1.45, true);
+    for (const [id, t0] of flashes) { swell(id, t0, 1, false); if (now - t0 > F.FLASH_MS) flashes.delete(id); }
+    if (mat) inst.instanceMatrix.needsUpdate = true;
+    if (col && inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    // halos on every fired node that has lit
+    const hp = haloPts.geometry.attributes.position.array;
+    let h = 0;
+    for (const [id, t0] of fired) {
+      const n = idNode.get(id);
+      if (now < t0 || h >= F.HALOS || !hasPos(n)) continue;
+      hp[h * 3] = n.x; hp[h * 3 + 1] = n.y; hp[h * 3 + 2] = n.z || 0; h++;
+    }
+    haloPts.geometry.setDrawRange(0, h);
+    haloPts.geometry.attributes.position.needsUpdate = true;
+    haloPts.material.opacity = 0.65 + 0.25 * Math.sin(now / 260);   // slow breathing
   }
 
   function install(g, context) {
@@ -427,6 +609,7 @@
     clear();
     if (tip) { tip.remove(); tip = null; }                   // drop the hover tooltip div
     if (ctrls) { ctrls.enabled = true; ctrls = null; }       // never leave orbit disabled
+    fired.clear(); flashes.clear(); settled.clear(); litLinks.clear(); pulses = []; idNode = null; idIx = null; _bg = null;
     graph = null; ctx = null; raycaster = null; ndc = null; dummy = null;
     _up = null; _dir = null; _q = null;
   }
@@ -435,6 +618,9 @@
   // build time; without a rebuild, filtered-out nodes linger as ghosts and colors/hover desync.
   // build() clears the old meshes first; the running rAF loop is synchronous-safe and picks up the new refs.
   function rebuild() { if (graph && ctx) { build(); markDirty(); arrowsStale = true; } }
+  // theme change: the dim target moved
+  function refreshBg() { _bg = null; if (fired.size) syncColors(); }
 
-  window.Instanced3d = { install, teardown, syncColors, rebuild };
+  window.Instanced3d = { install, teardown, syncColors, rebuild, fire, flash, clearFiring, refreshBg,
+    firing: () => fired.size > 0 };
 })();
