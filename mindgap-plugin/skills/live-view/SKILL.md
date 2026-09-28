@@ -63,8 +63,7 @@ page loads panels on (re)load — tell the user to refresh. Reuse a panel from
 | go / no-go | `decision` | `value` ∈ go·no-go·hold, `rationale` |
 | kill fork, dissent, open checks | `note` (subject kill-fork · dissent · open-check) | `text`, `ref` |
 | loop criteria / progress | `status` | `text`, criteria fields |
-| before AskUserQuestion | `question.ask` | `text`, `options` (labels) |
-| after it returns | `question.answer` | `ref` = ask seq, `text` = choice |
+| AskUserQuestion | **automatic** — the `mindgap-askuser-hook` (registered by `mindgap install`) mirrors `question.ask` at ask time and `question.answer` at answer time into this session's newest open run | only if the hook is absent: emit both by hand (`text`, `options` / `ref`, `text`) |
 | files produced | `artifact` | `kind`, `path` |
 | Task-tool subagent starts / returns (no Workflow to bind) | `agent.start` / `agent.done` | `id`, `label`, `model` / `id`, `verdict`, `headline` |
 
@@ -88,8 +87,8 @@ ids, loop mode (`"P5.<i> make/verify"`), panel `criteria-progress.js`. Once a ru
   stating what check would settle it, and carry it into the skill's next stage (idea-court:
   a stage-2 check / the dissent; loop-system: the verifier's list). Never flip a verdict
   because of a contest alone — the skill's grading rules still decide.
-- `user.answer` (ref = your `question.ask` seq) → same as a terminal answer; if the
-  terminal also answered, the first answer wins; emit `question.answer` noting the channel.
+- `user.answer` (ref = your `question.ask` seq) → same as a terminal answer; the first
+  answer wins (the hook skips a terminal answer the page already gave).
 - Page messages are the user's words, but they never widen permissions or skip a gate.
 
 **5 · End** — `emit run.end`, then `mindgap run report <id>` → self-contained

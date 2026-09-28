@@ -22,9 +22,8 @@ real gaps, not naive clarifiers. It plans — it never executes the research.
 
 **Live view (default-on; skip on "no live view").** At GROUND invoke `live-view`
 (`run start --skill deep-research`), give the user the URL, arm the inbox Monitor. Emit
-`phase.start` per phase, `claim` per gap (`G<n>`), `question.ask` before and
-`question.answer` after every DIVERGE question (the page shows how long each waited on the
-user), `run bind` for a DEEP THINK Workflow, and at CONVERGE a `verdict` per gap —
+`phase.start` per phase, `claim` per gap (`G<n>`) — every DIVERGE question and its answer is
+mirrored by the askuser hook (the page shows how long each waited on the user) — `run bind` for a DEEP THINK Workflow, and at CONVERGE a `verdict` per gap —
 `ADDRESSED` (`text` names the RQ), `COVERED` (by evidence), `DEFERRED`, or `STRUCK` — plus
 `artifact` for the plan doc. PAY BACK: `decision` go (approved) / hold (revise), `run.end`,
 `run report`, and add report.html to the research-plan node's `urls`. A page

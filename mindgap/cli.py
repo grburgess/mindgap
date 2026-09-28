@@ -317,8 +317,12 @@ def install_symlinks(bin_dir=None) -> list:
 # Hooks that are on by default. Recall at session start (folder) and at every prompt (the
 # question's words): the 2026-09-24 bench showed the first alone ranks important old nodes out.
 # The SessionEnd capture hook stays opt-in (README): it spends model calls.
-DEFAULT_HOOKS = [("SessionStart", "mindgap-recall-hook"),
-                 ("UserPromptSubmit", "mindgap-prompt-recall-hook")]
+# The AskUserQuestion mirror (live-view) is async and scoped to that one tool; it writes
+# only when this session has an open live-view run. (event, script, matcher, async)
+DEFAULT_HOOKS = [("SessionStart", "mindgap-recall-hook", None, False),
+                 ("UserPromptSubmit", "mindgap-prompt-recall-hook", None, False),
+                 ("PreToolUse", "mindgap-askuser-hook", "AskUserQuestion", True),
+                 ("PostToolUse", "mindgap-askuser-hook", "AskUserQuestion", True)]
 
 
 def install_hooks(settings_path=None, bin_dir=None) -> list:
@@ -331,12 +335,15 @@ def install_hooks(settings_path=None, bin_dir=None) -> list:
     data = json.loads(settings_path.read_text()) if settings_path.exists() else {}
     hooks = data.setdefault("hooks", {})
     added = []
-    for event, script in DEFAULT_HOOKS:
+    for event, script, matcher, is_async in DEFAULT_HOOKS:
         groups = hooks.setdefault(event, [])
         cmds = [h.get("command", "") for g in groups for h in g.get("hooks", [])]
         if any(Path(c.split()[0]).name == script for c in cmds if c.strip()):
             continue
-        groups.append({"hooks": [{"type": "command", "command": str(bin_dir / script)}]})
+        hook = {"type": "command", "command": str(bin_dir / script)}
+        if is_async:
+            hook["async"] = True
+        groups.append({"matcher": matcher, "hooks": [hook]} if matcher else {"hooks": [hook]})
         added.append(event)
     if added:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
