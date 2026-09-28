@@ -433,6 +433,32 @@ def cmd_loop(args):
         print(f"imported -> {dst}\nnext: tell Claude  \"continue the {dst.name} loop\"")
 
 
+def cmd_run(args):
+    from . import runs
+    try:
+        if args.run_cmd == "start":
+            rid = runs.start(args.skill, args.title, run_id=args.id)
+            print(f"{rid}\nlive view: http://localhost:{args.port}/runs/{rid}")
+        elif args.run_cmd == "emit":
+            raw = sys.stdin.read() if args.data == "-" else (args.data or "{}")
+            evt = runs.emit(args.run_id, args.kind, json.loads(raw), actor=args.actor,
+                            phase=args.phase, subject=args.subject)
+            print(evt["seq"])
+        elif args.run_cmd == "bind":
+            runs.bind_workflow(args.run_id, args.transcript_dir)
+            print(f"bound {args.transcript_dir}")
+        elif args.run_cmd == "inbox":
+            for line in runs.follow_inbox(args.run_id):
+                print(line, flush=True)
+        elif args.run_cmd == "report":
+            print(runs.report(args.run_id))
+        elif args.run_cmd == "list":
+            for v in runs.list_runs():
+                print(f"{v['id']}\t{v['skill']}\t{v['title']}")
+    except ValueError as e:
+        sys.exit(f"mindgap run: {e}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="mindgap",
                                  description="Local knowledge graph")
@@ -542,6 +568,23 @@ def main(argv=None):
     i = lsub.add_parser("import", help="scaffold a loop from an exported template dir")
     i.add_argument("path"); i.add_argument("--name"); i.add_argument("--topics")
     p.set_defaults(func=cmd_loop)
+
+    p = sub.add_parser("run", help="live-view run log: start / emit events / bind a Workflow / follow the page inbox / report")
+    rsub = p.add_subparsers(dest="run_cmd", required=True)
+    r = rsub.add_parser("start", help="create a run; prints its id + live-view URL")
+    r.add_argument("--skill", required=True); r.add_argument("--title", required=True)
+    r.add_argument("--id"); r.add_argument("--port", type=int, default=8765)
+    r = rsub.add_parser("emit", help="append one event (data: JSON string, or - for stdin)")
+    r.add_argument("run_id"); r.add_argument("kind"); r.add_argument("--data")
+    r.add_argument("--phase"); r.add_argument("--subject"); r.add_argument("--actor", default="orchestrator")
+    r = rsub.add_parser("bind", help="tail a running Workflow's transcriptDir into the run")
+    r.add_argument("run_id"); r.add_argument("transcript_dir")
+    r = rsub.add_parser("inbox", help="follow page->agent messages, one JSON line each (run under Monitor)")
+    r.add_argument("run_id")
+    r = rsub.add_parser("report", help="write the self-contained report.html")
+    r.add_argument("run_id")
+    rsub.add_parser("list", help="list runs, newest first")
+    p.set_defaults(func=cmd_run)
 
     args = ap.parse_args(argv)
     args.func(args)

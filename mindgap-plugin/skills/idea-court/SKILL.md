@@ -23,6 +23,8 @@ Planning a survey (use deep-research); executing one (loop-system); capturing on
 
 Precedent-hunting fan-out (does an integrated system already solve the whole spec?): references/wf-precedent-fanout.js.
 
+**Live view (default-on; skip on "no live view").** Before stage 2, invoke the `live-view` skill: `run start`, give the user the URL, arm the inbox Monitor, and install `live-view/references/panels/verdict-matrix.js` (labels must stay `<lens>:<claimId>`). Emit `claim` per idea/claim, `phase.start` per stage, `run bind` right after each Workflow launch, then reconciled `verdict`s, `ruling`, `decision` (go/no-go/hold), and `note`s for kill fork + dissent. A page `flag.contest` becomes a stage-2 check next round — it never flips a verdict by itself. Stage 5 ends with `run report`; link report.html from the `decision-*` node's urls.
+
 ## Non-negotiable grading rules (each fixed a real failure)
 
 1. **Contribution, not sufficiency.** An idea is REFUTED only if its CORE mechanism is contradicted. Every WEAKENED/REFUTED verdict MUST emit a `surviving_core` and a `next_test` — the surviving cores are what the debate later builds from (the ranked-first idea in the reference run scored 0.5 after its novelty was demolished). Refuters told to "refute unless it explains everything" kill everything; weakest-link roll-ups are the same trap.
