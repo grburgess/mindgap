@@ -13,6 +13,13 @@ stat tiles, the court = agents by phase, decisions feed, questions) plus optiona
 agent/decision, contest it, and answer your questions from the page. Data never leaves
 the laptop.
 
+Every page also gets three **animated diagrams** for free (web/run-viz.js): a pulse card
+(progress ring, verdict-mix bar, working/elapsed), the **court map** (claims → lens agents →
+ruling → decision; particles flow into working agents, nodes pop into their verdict colour)
+and a **timeline** (one growing bar per agent + markers for rulings, questions, contests).
+They key off agent labels `<lens>:<subject>`, `claim` events (subject = the same id) and
+`ruling`/`decision` events — emit those and the diagrams draw themselves.
+
 You are the only writer of semantic events. Workflow scripts cannot write files, so the
 page reads per-agent progress **passively** from the Workflow's transcript dir once you
 `bind` it — you never emit per-agent events yourself.
@@ -80,4 +87,4 @@ page loads panels on (re)load — tell the user to refresh. Reuse a panel from
   `journal.jsonl`; a run that hasn't written the state file yet shows agent ids only.
 - The run log is files, not the graph — no DB writes until the final report registration.
 - Replay a finished Workflow for demos/tests: `tools/live_view_replay.py <session-dir>
-  <wf_runId> --run-id <id>`.
+  <wf_runId> --run-id <id> [--duration 60]`.

@@ -187,6 +187,15 @@ def _workflow_agents(tdir: Path) -> list:
         progress = json.loads(state_file.read_text(encoding="utf-8")).get("workflowProgress") or []
     except (OSError, ValueError):
         pass
+    def finished_at(aid, done):
+        # an agent's transcript stops growing when it returns: its mtime is the finish time
+        if not done:
+            return None
+        try:
+            return int((tdir / f"agent-{aid}.jsonl").stat().st_mtime * 1000)
+        except OSError:
+            return None
+
     agents, seen = [], set()
     for p in progress:
         if p.get("type") != "workflow_agent":
@@ -196,13 +205,15 @@ def _workflow_agents(tdir: Path) -> list:
         agents.append({"workflow": tdir.name, "agentId": aid, "label": p.get("label") or aid,
                        "phase": p.get("phaseTitle"), "state": p.get("state"), "model": p.get("model"),
                        "startedAt": p.get("startedAt"), "summary": p.get("lastToolSummary"),
+                       "finishedAt": finished_at(aid, p.get("state") == "done" or aid in results),
                        "result": results.get(aid)})
     for aid in dict.fromkeys(started):      # agents the state file doesn't know yet
         if aid in seen:
             continue
         agents.append({"workflow": tdir.name, "agentId": aid, "label": aid, "phase": None,
                        "state": "done" if aid in results else "running", "model": None,
-                       "startedAt": None, "summary": None, "result": results.get(aid)})
+                       "startedAt": None, "summary": None, "finishedAt": finished_at(aid, aid in results),
+                       "result": results.get(aid)})
     return agents
 
 

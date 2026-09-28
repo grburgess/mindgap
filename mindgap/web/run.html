@@ -34,17 +34,32 @@
 
   <div id="run-body" hidden>
     <section class="section-tight"><div class="content-wide">
+      <div class="pulse" id="pulse"></div>
       <div class="stats" id="stats"></div>
     </div></section>
 
-    <section class="section-tight" id="sec-court"><div class="content-wide">
-      <h2 class="headline">The court</h2>
-      <p class="body-copy sub">Every agent, by phase. Its verdict lands the moment its journal line does.</p>
-      <div id="court" class="court"></div>
+    <section class="section-tight" id="sec-map" hidden><div class="content-wide">
+      <h2 class="headline">The court, live</h2>
+      <p class="body-copy sub">Claims flow into their lenses, lenses into the ruling. Particles run into agents still working; a node snaps to its verdict colour the moment its result lands.</p>
+      <div class="viz-legend" id="map-legend"></div>
+      <div class="viz-card"><div class="viz-scroll"><div id="map" class="viz"></div></div></div>
+    </div></section>
+
+    <section class="section-tight" id="sec-timeline" hidden><div class="content-wide">
+      <h2 class="headline">Timeline</h2>
+      <p class="body-copy sub">One bar per agent, from spawn to return; bars grow while agents work. Diamonds are rulings and decisions, dots are questions, triangles are contests.</p>
+      <div class="viz-legend" id="tl-legend"></div>
+      <div class="viz-card"><div class="viz-scroll"><div id="timeline" class="viz"></div></div></div>
     </div></section>
 
     <section class="section-tight" id="sec-panels" hidden><div class="content-wide">
       <div id="panels" class="panels"></div>
+    </div></section>
+
+    <section class="section-tight" id="sec-court"><div class="content-wide">
+      <h2 class="headline">Agents</h2>
+      <p class="body-copy sub">Every agent as a card, by phase. Click one for its full result, to ask about it, or to contest it.</p>
+      <div id="court" class="court"></div>
     </div></section>
 
     <section class="section-tight"><div class="content-wide split">
@@ -75,6 +90,7 @@
 
 <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
 <script src="/run-hero.js"></script>
+<script src="/run-viz.js"></script>
 <script src="/run.js"></script>
 </body>
 </html>

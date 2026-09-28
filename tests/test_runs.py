@@ -154,6 +154,17 @@ class WorkflowTailTest(_Env):
         self.assertEqual(agents[1]["state"], "running")
         self.assertEqual(runs.events("r1")[-1]["kind"], "workflow.bind")
 
+    def test_finished_at_from_agent_transcript_mtime(self):
+        runs.start("idea-court", "t", run_id="r1")
+        tdir = _fake_workflow(Path(self.tmp.name))
+        (tdir / "agent-a1.jsonl").write_text("{}\n")
+        os.utime(tdir / "agent-a1.jsonl", (1700000000, 1700000000))
+        (tdir / "agent-a2.jsonl").write_text("{}\n")       # still running: no finishedAt
+        runs.bind_workflow("r1", str(tdir))
+        by = {a["agentId"]: a for a in runs.agents("r1")}
+        self.assertEqual(by["a1"]["finishedAt"], 1700000000000)
+        self.assertIsNone(by["a2"]["finishedAt"])
+
     def test_agents_journal_only_fallback(self):
         runs.start("idea-court", "t", run_id="r1")
         tdir = _fake_workflow(Path(self.tmp.name), with_state=False)
