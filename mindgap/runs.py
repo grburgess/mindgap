@@ -2,11 +2,12 @@
 ...), rendered live by the web shell at /runs/<id> and frozen into report.html.
 
 <runs_dir>/<run-id>/
-    view.json     {id, skill, title, created, workflows: [transcriptDir...]}
+    view.json     {id, skill, title, created, session, workflows: [transcriptDir...]}
     events.jsonl  append-only, seq-numbered; writers: the orchestrator (CLI
                   `mindgap run emit`) and the page (via post_inbox)
     inbox.jsonl   page -> orchestrator messages; the orchestrator watches it
                   with `mindgap run inbox <id>` under Monitor
+    inbox.cursor  last inbox seq handed to the orchestrator (survives Monitor re-arms)
     panels/*.js   bespoke per-run panels written by the page-builder agent
     report.html   self-contained snapshot (no network) written by report()
 
@@ -19,6 +20,7 @@ journal.jsonl carries each agent's actual return value.
 """
 import fcntl
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -55,7 +57,9 @@ def start(skill, title, run_id=None) -> str:
     run_id = run_id if run_id is not None else f"{time.strftime('%Y%m%d-%H%M%S')}-{skill}"
     d = _dir(run_id, must_exist=False)
     d.mkdir(parents=True, exist_ok=True)
-    view = {"id": run_id, "skill": skill, "title": title, "created": _now_ms(), "workflows": []}
+    # session: lets a hook route to the run THIS session started, never a concurrent one's
+    view = {"id": run_id, "skill": skill, "title": title, "created": _now_ms(), "workflows": [],
+            "session": os.environ.get("CLAUDE_CODE_SESSION_ID")}
     (d / "view.json").write_text(json.dumps(view, indent=2), encoding="utf-8")
     emit(run_id, "run.start", {"skill": skill, "title": title})
     return run_id
@@ -132,13 +136,20 @@ def post_inbox(run_id, kind, text, ref=None) -> dict:
 
 
 def follow_inbox(run_id, poll=0.5, max_seconds=None):
-    """Yield inbox lines appended after the call starts (tail -f semantics), so
-    each Monitor notification is one new message from the page."""
-    path = _dir(run_id) / "inbox.jsonl"
+    """Yield inbox lines the orchestrator has not been handed yet: first the backlog past
+    the saved cursor, then new lines as they land (tail -f). A Monitor expires every
+    <=30 min, so a message posted between expiry and re-arm must still arrive on re-arm.
+    The cursor advances only when the consumer asks for the next line — i.e. after it
+    printed this one — so a kill mid-hand-off re-delivers rather than loses."""
+    d = _dir(run_id)
+    path, cur_path = d / "inbox.jsonl", d / "inbox.cursor"
     path.touch()
+    try:
+        cursor = int(cur_path.read_text().strip() or 0)
+    except (OSError, ValueError):
+        cursor = 0
     deadline = None if max_seconds is None else time.monotonic() + max_seconds
     with open(path, encoding="utf-8") as f:
-        f.seek(0, 2)
         buf = ""
         while deadline is None or time.monotonic() < deadline:
             chunk = f.readline()
@@ -146,9 +157,18 @@ def follow_inbox(run_id, poll=0.5, max_seconds=None):
                 time.sleep(poll)
                 continue
             buf += chunk
-            if buf.endswith("\n"):
-                yield buf.rstrip("\n")
-                buf = ""
+            if not buf.endswith("\n"):
+                continue      # partial line mid-write: wait for the rest
+            line, buf = buf.rstrip("\n"), ""
+            try:
+                seq = json.loads(line).get("seq", 0)
+            except ValueError:
+                continue
+            if seq <= cursor:
+                continue
+            yield line
+            cursor = seq
+            cur_path.write_text(str(seq))
 
 
 # ---- passive Workflow tailing ---------------------------------------------
@@ -182,8 +202,8 @@ def _jsonl(path):
 def _workflow_agents(tdir: Path) -> list:
     results = {j["agentId"]: j.get("result") for j in _jsonl(tdir / "journal.jsonl")
                if j.get("type") == "result" and "agentId" in j}
-    started = [j["agentId"] for j in _jsonl(tdir / "journal.jsonl")
-               if j.get("type") == "started" and "agentId" in j]
+    started = {j["agentId"]: j for j in _jsonl(tdir / "journal.jsonl")
+               if j.get("type") == "started" and "agentId" in j}
     state_file = tdir.parent.parent.parent / "workflows" / f"{tdir.name}.json"
     progress = []
     try:
@@ -210,12 +230,22 @@ def _workflow_agents(tdir: Path) -> list:
                        "startedAt": p.get("startedAt"), "summary": p.get("lastToolSummary"),
                        "finishedAt": finished_at(aid, p.get("state") == "done" or aid in results),
                        "result": results.get(aid)})
-    for aid in dict.fromkeys(started):      # agents the state file doesn't know yet
+    for aid, j in started.items():          # agents the state file doesn't know yet (it lands at the end)
         if aid in seen:
             continue
-        agents.append({"workflow": tdir.name, "agentId": aid, "label": aid, "phase": None,
-                       "state": "done" if aid in results else "running", "model": None,
-                       "startedAt": None, "summary": None, "finishedAt": finished_at(aid, aid in results),
+        try:   # label/phase ride on the started line and meta.json from spawn (current Claude Code)
+            meta = json.loads((tdir / f"agent-{aid}.meta.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            meta = {}
+        try:
+            began = int((tdir / f"agent-{aid}.meta.json").stat().st_mtime * 1000)
+        except OSError:
+            began = None
+        agents.append({"workflow": tdir.name, "agentId": aid,
+                       "label": j.get("label") or meta.get("description") or aid,
+                       "phase": j.get("phase") or meta.get("workflowPhase"),
+                       "state": "done" if aid in results else "running", "model": meta.get("model"),
+                       "startedAt": began, "summary": None, "finishedAt": finished_at(aid, aid in results),
                        "result": results.get(aid)})
     return agents
 

@@ -59,8 +59,8 @@
     if (!v) return 'na';
     if (/REFUTED|CONTRADICTED|NO-GO|NOGO|FAIL|KILL|FABRICATED/.test(v)) return 'bad';
     if (/WEAKENED|UNSUPPORTED|OVERSTATED|MISCITED/.test(v)) return 'weak';
-    if (/CAVEAT|HOLD\b|PARTIAL|UNTESTABLE|UNPROVABLE|PENDING/.test(v)) return 'warn';
-    if (/VERIFIED|HOLDS|SUPPORTED|PASS|GO\b|^GO$|OK/.test(v)) return 'ok';
+    if (/CAVEAT|HOLD\b|PARTIAL|UNTESTABLE|UNPROVABLE|PENDING|DEFERRED/.test(v)) return 'warn';
+    if (/VERIFIED|HOLDS|SUPPORTED|PASS|GO\b|^GO$|OK|ADDRESSED|COVERED/.test(v)) return 'ok';
     return 'na';
   }
   function verdictOf(a) {

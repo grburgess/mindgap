@@ -13,10 +13,19 @@
   // status palette — validated (dataviz validate_palette.js, dark, #161617): CVD/normal/contrast pass
   var C = { ok: '#30d158', warn: '#ffe14d', weak: '#ff8c1a', bad: '#ff375f', done: '#a1a1a6', na: '#48484a', run: '#64d2ff' };
   var L = { ok: 'verified', warn: 'caveats', weak: 'weakened', bad: 'refuted', done: 'done', na: 'pending', run: 'running' };
-  var LOOP_L = { ok: 'pass', bad: 'fail' };      // loop-system grades criteria, not claims
+  // per-skill vocabulary: what the first column is, what its states are called
+  var MODES = {
+    'idea-court': { rows: 'Claims', done: 'reconciled', cap: 'Verdict mix — reconciled, per claim',
+                    keys: ['ok', 'warn', 'weak', 'bad'], labels: {} },
+    'loop-system': { rows: 'Criteria', done: 'passing', cap: 'Criteria — latest verifier verdict',
+                     keys: ['ok', 'bad'], labels: { ok: 'pass', bad: 'fail' }, lanes: true },
+    'deep-research': { rows: 'Gaps', done: 'addressed', cap: 'Gaps — addressed by a research question',
+                       keys: ['ok', 'warn'], labels: { ok: 'addressed', warn: 'deferred', na: 'open' } }
+  };
   var H = null, ST = null, live = false;
-  function isLoop() { return !!(ST && ST.view && ST.view.skill === 'loop-system'); }
-  function lab(k) { return (isLoop() && LOOP_L[k]) || L[k]; }
+  function mode() { return MODES[ST && ST.view && ST.view.skill] || MODES['idea-court']; }
+  function isLoop() { return !!mode().lanes; }
+  function lab(k) { return mode().labels[k] || L[k]; }
 
   function svg(tag, attrs, parent) {
     var el = document.createElementNS(NS, tag);
@@ -143,13 +152,13 @@
       rk.forEach(function (k) { var c = H.verdictClass(recon[k].data.overall || recon[k].data.verdict); cnt[c in cnt ? c : 'na']++; });
       var claims = st.events.filter(function (e) { return e.kind === 'claim' && !recon[e.subject]; }).length;
       cnt.na += claims;
-      pulse.cap.textContent = isLoop() ? 'Criteria — latest verifier verdict' : 'Verdict mix — reconciled, per claim';
+      pulse.cap.textContent = mode().cap;
     } else {
       agents.forEach(function (a) { var c = agentCls(a); cnt[c in cnt ? c : 'na']++; });
       pulse.cap.textContent = 'Verdict mix — per lens agent, until reconciled';
     }
     Object.keys(cnt).forEach(function (k) {
-      pulse.counts[k].parentNode.hidden = isLoop() && (k === 'warn' || k === 'weak') && !cnt[k];
+      pulse.counts[k].parentNode.hidden = k !== 'na' && mode().keys.indexOf(k) < 0 && !cnt[k];
       pulse.segs[k].style.flexGrow = cnt[k];
       pulse.segs[k].hidden = !cnt[k];
       tweenNum(pulse.counts[k], cnt[k]);
@@ -191,8 +200,10 @@
       return p;
     });
     var cols = [];
-    if (claims.length) cols.push({ key: '__claims', title: isLoop() ? 'Criteria' : 'Claims' });
-    phases.forEach(function (p) { cols.push({ key: p, title: p }); });
+    if (claims.length) cols.push({ key: '__claims', title: mode().rows });
+    phases.forEach(function (p) {
+      if (parsed.some(function (x) { return (x.a.phase || 'Agents') === p; })) cols.push({ key: p, title: p });
+    });
     if (ruling || decision) cols.push({ key: '__out', title: 'Outcome' });
     function colOf(key) { for (var i = 0; i < cols.length; i++) if (cols[i].key === key) return i; return 0; }
 
@@ -278,7 +289,7 @@
       var s = svg('svg', { class: 'mapsvg', role: 'img', 'aria-label': 'Flow of the run: claims, agents, ruling, decision' }, host);
       map = { svg: s, head: svg('g', {}, s), edges: svg('g', {}, s), parts: svg('g', {}, s), nodes: svg('g', {}, s),
               n: {}, e: {}, bursts: [] };
-      legend(document.getElementById('map-legend'), isLoop() ? ['run', 'ok', 'bad', 'done', 'na'] : ['run', 'ok', 'warn', 'weak', 'bad', 'done', 'na']);
+      legend(document.getElementById('map-legend'), ['run'].concat(mode().keys, ['done', 'na']));
     }
     var W = Math.max(680, host.clientWidth || 680, g.cols.length * 112), lay = layout(g, W);
     map.svg.setAttribute('viewBox', '0 0 ' + W + ' ' + lay.H);
@@ -292,8 +303,8 @@
       t.textContent = c.title;
       var t2 = svg('text', { x: x, y: 31, class: 'msub', 'text-anchor': 'middle' }, map.head);
       t2.textContent = c.key === '__claims'
-        ? (isLoop() ? col.filter(function (m) { return m.cls === 'ok'; }).length + ' of ' + col.length + ' passing'
-                    : col.filter(function (m) { return m.verdict; }).length + ' of ' + col.length + ' reconciled')
+        ? (mode().labels.ok ? col.filter(function (m) { return m.cls === 'ok'; }).length : col.filter(function (m) { return m.verdict; }).length)
+          + ' of ' + col.length + ' ' + mode().done
         : c.key === '__out' ? '' : fin + ' of ' + col.length + ' done';
     });
     // nodes (diffed: keep elements so colour/position transitions animate)
@@ -410,8 +421,10 @@
                 'user.ask': 'you asked', 'user.answer': 'you answered', 'flag.contest': 'you contested', reply: 'agent replied' };
   function renderTimeline(host, st) {
     var agents = st.agents.filter(function (a) { return a.startedAt; });
-    document.getElementById('sec-timeline').hidden = !agents.length;
-    if (!agents.length) return;
+    var nMarks = st.events.filter(function (e) { return MARKS[e.kind]; }).length;
+    // dialogue-shaped runs (deep-research) have few or no agents: the rail of phases + questions is the story
+    document.getElementById('sec-timeline').hidden = !agents.length && nMarks < 2;
+    if (!agents.length && nMarks < 2) return;
     if (!tl) {
       host.textContent = '';
       var s = svg('svg', { class: 'tlsvg' }, host);
@@ -428,7 +441,7 @@
         showTip(ev, '+' + fmtDur(t - tl.t0), [nRun + ' working · ' + nDone + ' returned']);
       });
       s.addEventListener('mouseleave', function () { tl.cross.style.display = 'none'; hideTip(); });
-      legend(document.getElementById('tl-legend'), isLoop() ? ['run', 'ok', 'bad', 'done'] : ['run', 'ok', 'warn', 'weak', 'bad', 'done']);
+      legend(document.getElementById('tl-legend'), ['run'].concat(mode().keys, ['done']));
     }
     // rows: a phase header, then one lane per agent. Loop runs instead get one lane per
     // iteration ("2.1 make" + "2.1 verify" share lane "2.1"), maker and verifier side by side.
@@ -447,6 +460,17 @@
         agents.filter(function (a) { return (a.phase || 'Agents') === p; })
           .sort(function (a, b) { return a.startedAt - b.startedAt; })
           .forEach(function (a) { rows.push({ lane: a.label, agents: [a] }); });
+      });
+    }
+    var answered = {};
+    st.events.forEach(function (e) { if ((e.kind === 'question.answer' || e.kind === 'user.answer') && e.data && e.data.ref != null) answered[e.data.ref] = answered[e.data.ref] || e; });
+    var qs = st.events.filter(function (e) { return e.kind === 'question.ask'; });
+    if (qs.length) {
+      rows.push({ head: 'Waiting on you' });
+      qs.forEach(function (e) {
+        var ans = answered[e.seq];
+        rows.push({ lane: trunc(e.data.text, 60), agents: [{ agentId: 'q' + e.seq, label: e.data.text, question: true,
+          startedAt: e.ts, finishedAt: ans ? ans.ts : null, state: ans ? 'done' : 'running', answer: ans ? ans.data.text : null, seq: e.seq }] });
       });
     }
     var W = Math.max(680, host.clientWidth || 680), gut = Math.min(220, W * 0.3), rail = 26, rowH = 16;
@@ -470,18 +494,21 @@
       y += rowH;
     });
     function laneBar(a, y) {
-      var cls = agentCls(a);
+      var cls = a.question ? (a.finishedAt ? 'done' : 'run') : agentCls(a);
       var rec = tl.bars[a.agentId];
       if (!rec) {
         rec = tl.bars[a.agentId] = { el: svg('rect', { height: 8, rx: 4, class: 'tl-bar' }, tl.marks) };
         rec.el.addEventListener('mousemove', function (ev) {
           ev.stopPropagation();
           var aa = rec.a;
+          if (aa.question) return showTip(ev, trunc(aa.label, 120), [aa.finishedAt
+            ? 'answered after ' + fmtDur(aa.finishedAt - aa.startedAt) + ': ' + trunc(aa.answer, 80)
+            : 'waiting on you for ' + fmtDur(Date.now() - aa.startedAt)]);
           showTip(ev, aa.label, [lab(agentCls(aa)) + (H.verdictOf(aa) ? ' · ' + H.verdictOf(aa) : ''),
             (aa.finishedAt ? 'took ' : 'running ') + fmtDur((aa.finishedAt || Date.now()) - aa.startedAt)]);
         });
         rec.el.addEventListener('mouseleave', hideTip);
-        rec.el.addEventListener('click', function () { H.open({ agent: rec.a.agentId }); });
+        rec.el.addEventListener('click', function () { rec.a.question ? H.open({ seq: rec.a.seq }) : H.open({ agent: rec.a.agentId }); });
       }
       rec.a = a; rec.y = y + 4; seen[a.agentId] = 1;
       rec.el.setAttribute('y', rec.y);
@@ -524,12 +551,13 @@
   function tlFrame(now) {
     if (!tl || !ST || !tl.W) return;
     var starts = ST.agents.filter(function (a) { return a.startedAt; }).map(function (a) { return a.startedAt; });
-    var t0 = Math.min.apply(null, starts.concat(ST.events.length ? [ST.events[0].ts] : []));
+    var t0 = Math.min.apply(null, starts.concat(ST.events.length ? [ST.events[0].ts] : [now]));
     // span = agent activity + marked events only; a later bookkeeping event (report export) must not stretch it
-    var ends = ST.agents.map(function (a) { return a.finishedAt || a.startedAt || 0; })
+    var ends = Object.keys(tl.bars).map(function (id) { var a = tl.bars[id].a; return a.finishedAt || a.startedAt || 0; })
       .concat(ST.events.filter(function (e) { return MARKS[e.kind]; }).map(function (e) { return e.ts; }));
     // follow the clock only while agents work; an idle open run shouldn't squash the bars leftward
-    var working = ST.agents.some(function (a) { return a.state === 'running' && a.result == null; });
+    var working = ST.agents.some(function (a) { return a.state === 'running' && a.result == null; }) ||
+      Object.keys(tl.bars).some(function (id) { return tl.bars[id].a.question && !tl.bars[id].a.finishedAt; });
     var t1 = live && working ? now : Math.max.apply(null, ends);
     t1 += (t1 - t0) * 0.03;
     if (t1 - t0 < 5000) t1 = t0 + 5000;
