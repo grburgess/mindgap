@@ -133,26 +133,15 @@
   }
 
   function renderStats() {
-    // reconciled verdict events win; per-agent lens verdicts only until the orchestrator reconciles
-    var cls = { ok: 0, warn: 0, weak: 0, bad: 0 };
-    var recon = state.events.filter(function (e) { return e.kind === 'verdict'; });
-    (recon.length ? recon.map(function (e) { return e.data.overall || e.data.verdict; }) : state.agents.map(verdictOf))
-      .forEach(function (v) { var c = verdictClass(v); if (c in cls) cls[c]++; });
-    var done = state.agents.filter(function (a) { return a.state === 'done' || a.result != null; }).length;
     var openQ = state.events.filter(function (e) { return e.kind === 'question.ask' && !repliesTo(e.seq).length; }).length;
     var yours = state.events.filter(function (e) { return e.kind === 'user.ask' && !repliesTo(e.seq).length; }).length;
     var contests = state.events.filter(function (e) { return e.kind === 'flag.contest'; }).length;
     var tiles = [
-      [done + '/' + state.agents.length, 'agents finished'],
       [String(openQ), 'questions waiting on you'],
       [String(yours), 'your questions awaiting reply'],
       [String(contests), 'contested decisions']
     ];
     var el = clear($('stats'));
-    el.appendChild(h('div', { class: 'stat stat-wide' },
-      h('div', { class: 'vcounts' }, ['ok', 'warn', 'weak', 'bad'].map(function (c) { return h('span', { class: 'v-' + c }, String(cls[c])); })),
-      h('div', { class: 'stat-label' }, h('span', { class: 'v-ok' }, 'verified'), ' · ', h('span', { class: 'v-warn' }, 'caveats'), ' · ',
-        h('span', { class: 'v-weak' }, 'weakened'), ' · ', h('span', { class: 'v-bad' }, 'refuted'))));
     tiles.forEach(function (t) { el.appendChild(h('div', { class: 'stat' }, h('div', { class: 'stat-value' }, t[0]), h('div', { class: 'stat-label' }, t[1]))); });
   }
 
@@ -296,6 +285,7 @@
     if (f && f.tagName === 'INPUT' && f.value && f.id !== 'ask-text') return; // don't wipe a half-typed answer
     dirty = false;
     renderHeader(); renderStats(); renderCourt(); renderPanels(); renderDecisions(); renderQuestions();
+    if (window.LiveViz) window.LiveViz.update(state, window.LiveView, !REPORT && !ended());
   }
 
   // ---- data -----------------------------------------------------------------
