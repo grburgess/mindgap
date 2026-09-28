@@ -20,7 +20,11 @@
     'loop-system': { rows: 'Criteria', done: 'passing', cap: 'Criteria — latest verifier verdict',
                      keys: ['ok', 'bad'], labels: { ok: 'pass', bad: 'fail' }, lanes: true },
     'deep-research': { rows: 'Gaps', done: 'addressed', cap: 'Gaps — addressed by a research question',
-                       keys: ['ok', 'warn'], labels: { ok: 'addressed', warn: 'deferred', na: 'open' } }
+                       keys: ['ok', 'warn'], labels: { ok: 'addressed', warn: 'deferred', na: 'open' } },
+    'cv-research': { rows: 'Questions', done: 'answered', cap: 'Research questions — answered by the search',
+                     keys: ['ok', 'warn'], labels: { ok: 'answered', warn: 'partial', na: 'open' } },
+    'arxiv-explainer': { rows: 'Rubric checks', done: 'passing', cap: 'Rubric — latest verifier verdict',
+                         keys: ['ok', 'bad'], labels: { ok: 'pass', bad: 'fail' }, lanes: true }
   };
   var H = null, ST = null, live = false;
   function mode() { return MODES[ST && ST.view && ST.view.skill] || MODES['idea-court']; }
