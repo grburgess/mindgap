@@ -199,7 +199,7 @@ The graph is designed to be fed by recurring autonomous sessions that scan Confl
 
 ## Recall hooks (on by default)
 
-`mindgap install` registers two read-only Claude Code hooks in `~/.claude/settings.json`
+`mindgap install` registers three Claude Code hooks in `~/.claude/settings.json`
 (idempotent; an existing entry for the same script is kept; the file is backed up once to
 `settings.json.bak`; skip with `--no-hooks`):
 
@@ -210,7 +210,12 @@ The graph is designed to be fed by recurring autonomous sessions that scan Confl
   Session-start recall is newest-first, so in a busy project an old closed decision never makes
   the cut; this one ranks by the question.
 
-Both are database reads, no model call, ~150 ms, and always exit 0. Turn either off in
+- **PreToolUse + PostToolUse** (matcher `AskUserQuestion`, async) → `bin/mindgap-askuser-hook`:
+  mirrors each question Claude asks, and your answer, into this session's open live-view run
+  (`mindgap run …`), so the page shows how long each waited on you. Writes nothing when the
+  session has no open run; never touches another session's run; skips subagents.
+
+The recall hooks are database reads, no model call, ~150 ms, and always exit 0. Turn either off in
 `~/.mindgap/capture.json`: `"recall": {"enabled": false}` (both) or `{"prompt": false}`.
 
 ## Self-learning capture
