@@ -20,8 +20,8 @@ real gaps, not naive clarifiers. It plans — it never executes the research.
 - Otherwise run the phases: GROUND → GAP → DIVERGE → [DEEP THINK] →
   CONVERGE → PAY BACK. Full protocol: `references/phases.md`.
 
-**Live view (default-on; skip on "no live view").** At GROUND invoke `live-view`
-(`run start --skill deep-research`), give the user the URL, arm the inbox Monitor. Emit
+**Live view (default-on; skip on "no live view").** At GROUND invoke `mindgap:live-view`
+(`run start --skill deep-research`), give the user the URL, arm the inbox watcher (`run inbox --once` in the background). Emit
 `phase.start` per phase, `claim` per gap (`G<n>`) — every DIVERGE question and its answer is
 mirrored by the askuser hook (the page shows how long each waited on the user) — `run bind` for a DEEP THINK Workflow, and at CONVERGE a `verdict` per gap —
 `ADDRESSED` (`text` names the RQ), `COVERED` (by evidence), `DEFERRED`, or `STRUCK` — plus

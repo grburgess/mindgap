@@ -45,7 +45,7 @@
         const tds = iters.map((it) => {
           const e = cell[c + '|' + it];
           if (!e) return h('td', { class: 'cp-empty' }, '·');
-          const v = e.data.overall || e.data.verdict, k = api.verdictClass(v);
+          const v = api.eventVerdict ? api.eventVerdict(e) : (e.data.overall || e.data.verdict), k = api.verdictClass(v);
           last = k;
           const isFirst = k === 'ok' && first === null;
           if (isFirst) first = it;

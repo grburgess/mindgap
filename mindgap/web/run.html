@@ -88,9 +88,10 @@
 
 <footer class="footer"><div class="content" id="foot">mindgap live-view</div></footer>
 
-<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
-<script src="/run-hero.js"></script>
 <script src="/run-viz.js"></script>
 <script src="/run.js"></script>
+<!-- ambient hero last and deferred: a slow/blocked CDN must never hold the page -->
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js" defer></script>
+<script src="/run-hero.js" defer></script>
 </body>
 </html>

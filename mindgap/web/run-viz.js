@@ -52,7 +52,9 @@
   function shortId(id) { var m = /^[A-Za-z]+\d+/.exec(id || ''); return m ? m[0] : trunc(id, 10); }
   function fmtDur(ms) {
     var s = Math.max(0, Math.round(ms / 1000));
-    return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+    if (s < 60) return s + 's';
+    if (s < 3600) return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+    return Math.floor(s / 3600) + 'h ' + String(Math.floor(s / 60) % 60).padStart(2, '0') + 'm';
   }
   function legend(host, keys) {
     host.textContent = '';
@@ -153,7 +155,7 @@
     st.events.forEach(function (e) { if (e.kind === 'verdict') recon[e.subject || e.seq] = e; });
     var rk = Object.keys(recon);
     if (rk.length) {
-      rk.forEach(function (k) { var c = H.verdictClass(recon[k].data.overall || recon[k].data.verdict); cnt[c in cnt ? c : 'na']++; });
+      rk.forEach(function (k) { var c = H.verdictClass(H.eventVerdict(recon[k])); cnt[c in cnt ? c : 'na']++; });
       var claims = st.events.filter(function (e) { return e.kind === 'claim' && !recon[e.subject]; }).length;
       cnt.na += claims;
       pulse.cap.textContent = mode().cap;
@@ -214,8 +216,8 @@
     claims.forEach(function (c) {
       var r = recon[c];
       add({ id: 'c:' + c, kind: 'claim', col: 0, subj: c, label: shortId(c), title: c, text: cText[c],
-            cls: r ? H.verdictClass(r.data.overall || r.data.verdict) : 'na', seq: r ? r.seq : null,
-            verdict: r ? (r.data.overall || r.data.verdict) : null });
+            cls: r ? H.verdictClass(H.eventVerdict(r)) : 'na', seq: r ? r.seq : null,
+            verdict: r ? H.eventVerdict(r) : null });
     });
     parsed.forEach(function (p) {
       add({ id: 'a:' + p.a.agentId, kind: 'agent', col: colOf(p.a.phase || 'Agents'), subj: p.subj, lens: p.lens,
@@ -277,6 +279,8 @@
     if (n.kind === 'agent') {
       var a = n.agent, r = a.result && typeof a.result === 'object' ? a.result : null;
       var dur = a.startedAt ? fmtDur((a.finishedAt || Date.now()) - a.startedAt) : null;
+      if (a.state === 'unconfirmed') dur = 'no done event for ' + fmtDur(Date.now() - a.startedAt) + ' — status unconfirmed';
+      else if (a.inferred) dur = 'took ~' + dur + ' (end inferred)';
       showTip(ev, a.label, [lab(n.cls) + (H.verdictOf(a) ? ' · ' + H.verdictOf(a) : ''), dur && ((a.finishedAt ? 'took ' : 'running ') + dur),
         r && r.headline ? trunc(r.headline, 200) : null, 'click for the full result']);
     } else if (n.kind === 'claim') {

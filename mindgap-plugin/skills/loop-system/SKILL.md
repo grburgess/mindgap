@@ -80,7 +80,7 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
    - Create empty `artifacts/` dir.
    - **Seed the project ledger:** if `<project>/.claude/PROJECT-LEARNINGS.md`
      is absent, create it from
-     `~/.claude/skills/loop-distill/templates/PROJECT-LEARNINGS.md`,
+     `../loop-distill/templates/PROJECT-LEARNINGS.md` (sibling skill, relative to this skill's base dir),
      **filling its placeholders** — `{{project-name}}` = this project, and
      replace the header line "Distilled by `loop-distill` {{YYYY-MM-DD}}"
      with "Seeded by `loop-system` INIT <today's date> — not yet
@@ -200,6 +200,10 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
      re-scan current ground truth (id/title/path sweep on the focus
      keywords) BEFORE dispatching makers; re-scope if the gap has
      closed/collided.
+   - **Live view:** start it now (SESSION § Live view) and give the user
+     the URL before the first maker, unless the user said "no live view".
+     It is a resume step, not optional preamble: a resumed session that
+     skips it leaves the user asking where the page is.
    - Run the next session.
 
 ## SESSION
@@ -218,12 +222,13 @@ schedules NO wakeup. Auto-continuation keys ONLY on GOAL §2 criteria + the
 not in §2? re-gate it into §2 or drop it).
 
 **Live view (default-on; skip on "no live view").** At session start invoke the
-`live-view` skill: `run start --skill loop-system --title "<loop> · session <N>"`, give
-the user the URL, arm the inbox Monitor, install
-`live-view/references/panels/criteria-progress.js`, and emit one `claim` per GOAL §2
-criterion (subject `C<n>`) plus a `verdict` for each criterion's status carried in from
-STATE (`data.iteration` = the last session's iteration) so the page opens with the real
-starting state. Per iteration: `phase.start "<s>.<i> make"` → the maker (Workflow engine:
+`mindgap:live-view` skill: `run start --skill loop-system --title "<loop> · session <N>"`, give
+the user the URL, arm the inbox watcher (`run inbox --once` in the background), install
+`../live-view/references/panels/criteria-progress.js`, and emit one `claim` per GOAL §2
+criterion (subject `C<n>`, `text` = the criterion) plus a `verdict` ONLY for criteria that
+already have a real verifier result in STATE (`data.iteration` = that session's iteration).
+A criterion never verified gets NO verdict — it renders as pending; seeding it as FAIL
+paints the whole page red before any work has run. Per iteration: `phase.start "<s>.<i> make"` → the maker (Workflow engine:
 `run bind` the transcriptDir; Task engine: `agent.start`/`agent.done` with
 `label "maker:<class>"`) → `phase.start "<s>.<i> verify"` → the verifier the same way
 (`agent.done` `verdict` PASS/FAIL, `headline` = gaps) → one `verdict` per criterion it
@@ -246,6 +251,17 @@ every workflow maker exactly as to a Shape 1 maker.)
    writes files in a git repo, isolate it — create/enter a git worktree
    for it first. Non-git project → no worktrees; makers run
    sequentially only.
+
+   **Orchestrator-owned completion watch:** whenever a maker launches a
+   long remote job (cluster/COW, CI, a queue) or reports "monitor armed /
+   waiting on background work", the ORCHESTRATOR arms its own background
+   completion check at once: an until-loop on the job state or output
+   files that exits on success AND on every failure signature (job failed,
+   per-item FAIL marker, auth expired). Never rely on the maker's
+   self-armed watcher. Background makers park on those watchers and are
+   not re-woken (lessons.md 2026-07-14, 2026-09-17, 2026-09-29: 6 parks in
+   one session). Silence from a parked maker looks exactly like "still
+   running".
 
    **Artifact-existence check (before the verifier):** confirm the
    files the maker reported writing actually exist (`ls`/`wc -l` what
@@ -296,6 +312,11 @@ GOAL.md `Max sessions before forced escalation` → forced escalation.
    one: `loop-distill`'s `unclosed` check keys on the absence of
    `Loop status: complete`, so a finished loop that never gets the line is
    flagged forever and the resulting proposal has nothing to apply.
+   **Edit STATE/GOAL only via `templates/state_edit.py`** (`replace_section`,
+   `append_to_section`, `replace_once`; `sys.path.insert` the templates dir):
+   a hand-rolled `s.index("## X")` slice can match a heading quoted inside a
+   header comment, yield an empty slice, and `str.replace("", body)` then
+   splices body between every character (fired 5×; lessons.md 2026-09-25..30).
    Then promote memory —
    open failure → investigated → verifier-confirmed → `Verified facts`
    (with method + date); pattern seen ≥2× → `General rules`.
@@ -366,7 +387,7 @@ GOAL.md `Max sessions before forced escalation` → forced escalation.
      row. Protocol: $MINDGAP_HOME/learning/loop-system/global-learnings.md § Mindmap mirror. Prune/promote is usage-based, not
      recency-based, and is handled by the structure pass
      (references/structure-pass.md). Promoting a candidate into a
-     new/updated `~/.claude/skills/` entry stays approval-gated — propose
+     new/updated skill (`~/.claude/skills/**` or `mindgap-plugin/skills/**`) stays approval-gated — propose
      it, apply only with user approval.
    - Meta-lessons (this skill misfired: bad scaffold, wrong engine
      choice, vague rubric passed the gate) → append
@@ -389,7 +410,7 @@ GOAL.md `Max sessions before forced escalation` → forced escalation.
      surface the unresolved structural-fix backlog, and propose
      usage-based retire/promote. Skip otherwise.
    - **Project distill (cross-loop):** if this session COMPLETED the loop or
-     hit forced escalation, invoke the `loop-distill` skill. It reconciles
+     hit forced escalation, invoke the `mindgap:loop-distill` skill. It reconciles
      every loop in the project into
      `<project>/.claude/PROJECT-LEARNINGS.md`, audits loop health, and
      promotes outward under its own write gates — and it consumes the

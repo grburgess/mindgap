@@ -59,7 +59,8 @@
     if (!v) return 'na';
     if (/REFUTED|CONTRADICTED|NO-GO|NOGO|FAIL|KILL|FABRICATED/.test(v)) return 'bad';
     if (/WEAKENED|UNSUPPORTED|OVERSTATED|MISCITED/.test(v)) return 'weak';
-    if (/CAVEAT|HOLD\b|PARTIAL|UNTESTABLE|UNPROVABLE|PENDING|DEFERRED/.test(v)) return 'warn';
+    if (/^(PENDING|OPEN|NOT[ _-]?(YET[ _-]?)?STARTED|NOT[ _-]?RUN|TODO)$/.test(v)) return 'na';
+    if (/CAVEAT|HOLD\b|PARTIAL|UNTESTABLE|UNPROVABLE|DEFERRED/.test(v)) return 'warn';
     if (/VERIFIED|HOLDS|SUPPORTED|PASS|GO\b|^GO$|OK|ADDRESSED|COVERED|ANSWERED/.test(v)) return 'ok';
     return 'na';
   }
@@ -67,6 +68,13 @@
     var r = a.result;
     if (r && typeof r === 'object') return r.overall || r.verdict || r.decision || a.summary || null;
     return a.summary || null;
+  }
+  // A verdict event's value, normalised: a criterion the orchestrator marks "not started"
+  // is pending, whatever overall it was given (a real run seeded all six as FAIL).
+  function eventVerdict(e) {
+    var d = e.data || {}, v = d.overall || d.verdict || d.value || null;
+    if (/^\s*(not[ -]?(yet[ -])?started|not run( yet)?|untested|pending)\b/i.test(d.text || '')) return 'PENDING';
+    return v;
   }
   function textOf(e) {
     var d = e.data || {};
@@ -105,7 +113,7 @@
   // ---- render ---------------------------------------------------------------
   function renderHeader() {
     var v = state.view || {};
-    document.title = (v.title || 'live-view') + (REPORT ? ' — report' : ' — live');
+    document.title = (v.title || 'live-view') + (REPORT ? ' — report' : ended() ? ' — complete' : ' — live');
     $('nav-run').textContent = v.id || '';
     $('skill').textContent = v.skill || '';
     $('title').textContent = v.title || RUN_ID;
@@ -180,7 +188,7 @@
   function renderDecisions() {
     var el = clear($('decisions'));
     state.events.filter(function (e) { return FEED_KINDS[e.kind]; }).slice().reverse().forEach(function (e) {
-      var v = e.data.overall || e.data.verdict || e.data.value || null;
+      var v = eventVerdict(e);
       var li = h('li', null,
         h('div', { class: 'head' },
           h('span', { class: 'chip c-' + verdictClass(v || (e.kind === 'ruling' ? 'x' : '')) }, e.kind),
@@ -336,7 +344,7 @@
       panels.push({ name: name, spec: spec, el: null });
       dirty = true; render();
     },
-    h: h, rich: rich, verdictClass: verdictClass, verdictOf: verdictOf, textOf: textOf,
+    h: h, rich: rich, verdictClass: verdictClass, eventVerdict: eventVerdict, verdictOf: verdictOf, textOf: textOf,
     ask: function (text, ref) { return post('user.ask', text, ref); },
     contest: function (text, ref) { return post('flag.contest', text, ref); },
     open: openDrawer,

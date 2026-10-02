@@ -26,11 +26,13 @@ const TYPE_COLORS = {
   stub: '#5d6565',
   finding: '#70c2be',
   reference: '#a5a16a',
+  event: '#a68f60',
   'verified-fact': '#a3d9bb',
   project: '#6287bf',
   idea: '#c9c4f3',
   fact: '#70996b',
   process: '#a1afde',
+  skill: '#8484c7',
   decision: '#9570a5',
   gotcha: '#d5bc70',
 };
@@ -38,7 +40,7 @@ const TYPE_COLORS = {
 const SETTINGS_DEFAULTS = Object.freeze({
   charge: -260, linkDist: 55, linkStrength: 0.3, velocityDecay: 0.32, collide: true, gravity: 0.1, centerForce: 0, // physics
   labelMode: 'hubs', linkOpacity: 0.30, arrows: true, starfield: true, autoRotate: false, edgeFlow: true, bloom: true, warp: true, ambient: true, recallFire: true, // visual
-  colorBy: 'type', showHulls: true, showClusterLabels: true, clusterForce: false,    // clusters
+  colorBy: 'type', showHulls: true, showClusterLabels: true, showClusterLegend: true, clusterForce: false,    // clusters
   theme: 'editorial',                                                                // appearance
 });
 function loadSettings() {
@@ -1528,6 +1530,7 @@ function renderSettings() {
       <button class="seg-toggle ${s.colorBy === 'community' ? 'on' : ''}" id="set-colorby">Color by <b>${s.colorBy}</b></button>
       <button class="seg-toggle ${s.showHulls ? 'on' : ''}" data-key="showHulls" data-kind="cluster">Topic glow <b>${s.showHulls ? 'on' : 'off'}</b></button>
       <button class="seg-toggle ${s.showClusterLabels ? 'on' : ''}" data-key="showClusterLabels" data-kind="cluster">Cluster labels <b>${s.showClusterLabels ? 'on' : 'off'}</b></button>
+      <button class="seg-toggle ${s.showClusterLegend ? 'on' : ''}" data-key="showClusterLegend" data-kind="cluster">Cluster box <b>${s.showClusterLegend ? 'on' : 'off'}</b></button>
       <button class="seg-toggle ${s.clusterForce ? 'on' : ''}" data-key="clusterForce" data-kind="physics">Topic repulsion <b>${s.clusterForce ? 'on' : 'off'}</b></button>
     </div>
     <div class="actions"><button id="set-reset">Reset to defaults</button></div>`;
@@ -1583,7 +1586,9 @@ function renderSettings() {
 
 function renderLegend() {
   const C = state.clusters, el = $('#legend');
-  if (!C || state.settings.colorBy !== 'community') { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  if (!C || state.settings.colorBy !== 'community' || !state.settings.showClusterLegend) {
+    el.classList.add('hidden'); el.innerHTML = ''; return;
+  }
   el.innerHTML = `<h3><span>clusters</span><span class="scount">${C.k}</span></h3><ul>` + C.communities.map((c) =>
     `<li class="leg ${state.activeCluster === c.idx ? 'active' : ''}" data-c="${c.idx}">
        <i style="--tc:${c.color}"></i>${esc(c.hubTitle)} <span class="mono dim">${c.size}</span></li>`).join('') + '</ul>';

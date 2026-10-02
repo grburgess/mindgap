@@ -314,9 +314,47 @@ def install_symlinks(bin_dir=None) -> list:
     return linked
 
 
+def prune_dangling_launchers(bin_dir=None) -> list:
+    """Remove symlinks in bin_dir that point into this checkout's bin/ dir but no
+    longer resolve to anything -- leftovers from a renamed or removed launcher
+    (e.g. bin/mindmap, before the mindmap -> mindgap rename) that
+    install_symlinks itself never touches because it only adds current names.
+    Returns the names removed."""
+    bin_dir = Path(bin_dir) if bin_dir else Path.home() / ".local" / "bin"
+    src_bin = str((config.PKG_DIR.parent / "bin").resolve())
+    pruned = []
+    if not bin_dir.is_dir():
+        return pruned
+    for entry in sorted(bin_dir.iterdir()):
+        if not entry.is_symlink() or entry.exists():
+            continue  # not a symlink, or resolves fine -- leave it alone
+        raw_target = os.readlink(entry)
+        if os.path.dirname(os.path.abspath(str(bin_dir / raw_target))) == src_bin:
+            entry.unlink()
+            pruned.append(entry.name)
+    return pruned
+
+
+def prune_skill_symlinks(skills_dir=None) -> list:
+    """Remove ~/.claude/skills/<name> symlinks resolving into a */mindgap-plugin/skills/
+    dir (the retired pre-plugin route; the plugin now owns those skills). Real dirs and
+    foreign symlinks are left alone. Idempotent. Returns the names removed."""
+    skills_dir = Path(skills_dir) if skills_dir else Path.home() / ".claude" / "skills"
+    pruned = []
+    if not skills_dir.is_dir():
+        return pruned
+    for entry in sorted(skills_dir.iterdir()):
+        if not entry.is_symlink():
+            continue
+        parent = entry.resolve(strict=False).parent
+        if parent.name == "skills" and parent.parent.name == "mindgap-plugin":
+            entry.unlink()
+            pruned.append(entry.name)
+    return pruned
+
+
 # Hooks that are on by default. Recall at session start (folder) and at every prompt (the
 # question's words): the 2026-09-24 bench showed the first alone ranks important old nodes out.
-# The SessionEnd capture hook stays opt-in (README): it spends model calls.
 # The AskUserQuestion mirror (live-view) is async and scoped to that one tool; it writes
 # only when this session has an open live-view run. (event, script, matcher, async)
 DEFAULT_HOOKS = [("SessionStart", "mindgap-recall-hook", None, False),
@@ -324,18 +362,23 @@ DEFAULT_HOOKS = [("SessionStart", "mindgap-recall-hook", None, False),
                  ("PreToolUse", "mindgap-askuser-hook", "AskUserQuestion", True),
                  ("PostToolUse", "mindgap-askuser-hook", "AskUserQuestion", True)]
 
+# Opt-in only (README § Self-learning capture): spends model calls on every session exit.
+# `mindgap install --enable-capture` adds this on top of DEFAULT_HOOKS.
+CAPTURE_HOOK = ("SessionEnd", "mindgap-capture-hook", None, False)
 
-def install_hooks(settings_path=None, bin_dir=None) -> list:
-    """Register DEFAULT_HOOKS in Claude Code's user settings. Idempotent: an event that
-    already runs a command with the same script name (any path) is left alone, and
-    every other key is preserved. Backs the file up once to settings.json.bak.
-    Returns the events added."""
+
+def install_hooks(settings_path=None, bin_dir=None, include_capture=False) -> list:
+    """Register DEFAULT_HOOKS (plus CAPTURE_HOOK if include_capture) in Claude Code's
+    user settings. Idempotent: an event that already runs a command with the same
+    script name (any path) is left alone, and every other key is preserved. Backs
+    the file up once to settings.json.bak. Returns the events added."""
     settings_path = Path(settings_path) if settings_path else Path.home() / ".claude" / "settings.json"
     bin_dir = Path(bin_dir) if bin_dir else Path.home() / ".local" / "bin"
     data = json.loads(settings_path.read_text()) if settings_path.exists() else {}
     hooks = data.setdefault("hooks", {})
     added = []
-    for event, script, matcher, is_async in DEFAULT_HOOKS:
+    wanted = DEFAULT_HOOKS + [CAPTURE_HOOK] if include_capture else DEFAULT_HOOKS
+    for event, script, matcher, is_async in wanted:
         groups = hooks.setdefault(event, [])
         cmds = [h.get("command", "") for g in groups for h in g.get("hooks", [])]
         if any(Path(c.split()[0]).name == script for c in cmds if c.strip()):
@@ -354,16 +397,94 @@ def install_hooks(settings_path=None, bin_dir=None) -> list:
     return added
 
 
+# Pre docs/MIGRATION.md layout -> $MINDGAP_HOME/learning/<skill>/. (skill, src-rel, dst-rel).
+# meta-trainer's code lives in its own repo, but its ledgers are the same
+# $MINDGAP_HOME/learning/ concern this repo documents and migrates for the others.
+LEGACY_LEDGER_MOVES = [
+    ("loop-system", "references/global-learnings.md", "global-learnings.md"),
+    ("loop-system", "references/lessons.md", "lessons.md"),
+    ("loop-system", "claude_comments", "claude_comments"),
+    ("meta-trainer", "references/global-learnings.md", "global-learnings.md"),
+    ("meta-trainer", "references/lessons.md", "lessons.md"),
+    ("arxiv-explainer", "LESSONS.md", "LESSONS.md"),
+]
+
+
+def migrate_skill_ledgers(skills_dir=None, global_dir=None) -> dict:
+    """Move legacy skill-ledger files/dirs (pre docs/MIGRATION.md layout, under
+    ~/.claude/skills/<skill>/...) into $MINDGAP_HOME/learning/<skill>/. Never
+    overwrites: a destination that already exists is left alone and reported as
+    a conflict (docs/MIGRATION.md § Fork detection) instead of silently clobbering
+    whatever a from-scratch $MINDGAP_HOME/learning ledger has accumulated since.
+    Returns {"moved": [...], "conflicts": [...]}."""
+    skills_dir = Path(skills_dir) if skills_dir else Path.home() / ".claude" / "skills"
+    global_dir = Path(global_dir) if global_dir else Path.home() / "self_learning_global"
+    moved, conflicts = [], []
+
+    def _move(src, dst):
+        if not src.exists():
+            return
+        if dst.exists():
+            conflicts.append(f"{src} (destination {dst} already exists -- merge by hand)")
+            return
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        src.rename(dst)
+        moved.append(f"{src} -> {dst}")
+
+    for skill, rel_src, rel_dst in LEGACY_LEDGER_MOVES:
+        _move(skills_dir / skill / rel_src, global_dir / skill / rel_dst)
+    _move(skills_dir / "loop-system-workspace", global_dir / "loop-system" / "workspace")
+
+    return {"moved": moved, "conflicts": conflicts}
+
+
+def check_legacy_pip_package(path=None) -> list:
+    """Scan every installed distribution across ALL of sys.path (importlib.metadata,
+    not `pip show` -- which answers only 'what's first on sys.path', not 'is there a
+    second one elsewhere': see gl-2026-09-09-pip-show-answers-precedence-not-install)
+    for the pre-rename 'mindmap' package name. Informational only -- never uninstalls.
+    Returns the dist-info locations found, if any."""
+    import importlib.metadata as md
+    found = []
+    for dist in md.distributions(**({"path": path} if path is not None else {})):
+        name = (dist.metadata.get("Name") or "").strip().lower()
+        if name == "mindmap":
+            loc = getattr(dist, "_path", None)
+            found.append(str(loc) if loc else name)
+    return found
+
+
 def cmd_install(args):
     bin_dir = Path.home() / ".local" / "bin"
     linked = install_symlinks(bin_dir)
     print(f"linked {', '.join(linked)} -> {bin_dir}")
     if str(bin_dir) not in os.environ.get("PATH", "").split(os.pathsep):
         print(f"note: add {bin_dir} to PATH")
+    pruned = prune_dangling_launchers(bin_dir)
+    if pruned:
+        print(f"removed stale launcher symlink(s) from a previous name: {', '.join(pruned)}")
+    skill_links = prune_skill_symlinks()
+    if skill_links:
+        print(f"removed retired skill symlink(s) (plugin owns them now): {', '.join(skill_links)}")
 
     n = migrate()
     if n:
         print(f"migrated {n} legacy file(s) into {config.data_dir()}")
+
+    ledgers = migrate_skill_ledgers()
+    if ledgers["moved"]:
+        print(f"migrated {len(ledgers['moved'])} legacy skill-ledger file(s)/dir(s) "
+              f"into {Path.home() / 'self_learning_global'}")
+    for c in ledgers["conflicts"]:
+        print(f"note: legacy ledger left in place (destination already exists, merge by hand): {c}")
+
+    legacy_pkg = check_legacy_pip_package()
+    if legacy_pkg:
+        print("note: found an old 'mindmap' pip package (pre-rename) still installed:")
+        for loc in legacy_pkg:
+            print(f"      {loc}")
+        print("      dead weight, not a conflict -- 'mindgap' is a different package name "
+              "and can't be shadowed by it. Safe to remove with the pip/python that owns that path.")
 
     seeded = init_db()
     print(f"seeded {config.db_path()} ({seeded} nodes)" if seeded
@@ -371,10 +492,15 @@ def cmd_install(args):
     if install_capture_preset():
         print(f"installed capture preset -> {__import__('mindgap.capture', fromlist=['x']).config_path()}")
 
+    enable_capture = getattr(args, "enable_capture", False)
     if not getattr(args, "no_hooks", False):
-        added = install_hooks(bin_dir=bin_dir)
+        added = install_hooks(bin_dir=bin_dir, include_capture=enable_capture)
         print(f"registered Claude Code hooks: {', '.join(added)}" if added
               else "Claude Code recall hooks already registered")
+        if not enable_capture:
+            print("note: SessionEnd auto-capture (learnings -> graph on every session exit) is "
+                  "NOT enabled -- it spends model calls, so it's opt-in. Enable it with:")
+            print("      mindgap install --enable-capture")
 
     print()
     print("mindgap serve   # web UI at http://localhost:8765")
@@ -455,7 +581,7 @@ def cmd_run(args):
             runs.bind_workflow(args.run_id, args.transcript_dir)
             print(f"bound {args.transcript_dir}")
         elif args.run_cmd == "inbox":
-            for line in runs.follow_inbox(args.run_id):
+            for line in runs.follow_inbox(args.run_id, once=args.once):
                 print(line, flush=True)
         elif args.run_cmd == "report":
             print(runs.report(args.run_id))
@@ -563,6 +689,8 @@ def main(argv=None):
     p = sub.add_parser("install", help="symlink launchers into ~/.local/bin, migrate legacy data, seed the db, "
                                         "register the recall hooks in ~/.claude/settings.json")
     p.add_argument("--no-hooks", action="store_true", help="skip registering Claude Code hooks")
+    p.add_argument("--enable-capture", action="store_true",
+                   help="also register the SessionEnd auto-capture hook (opt-in: spends model calls)")
     p.set_defaults(func=cmd_install)
 
     p = sub.add_parser("loop", help="scaffold / share knowledge loops from bundled templates")
@@ -586,8 +714,10 @@ def main(argv=None):
     r.add_argument("--phase"); r.add_argument("--subject"); r.add_argument("--actor", default="orchestrator")
     r = rsub.add_parser("bind", help="tail a running Workflow's transcriptDir into the run")
     r.add_argument("run_id"); r.add_argument("transcript_dir")
-    r = rsub.add_parser("inbox", help="follow page->agent messages, one JSON line each (run under Monitor)")
+    r = rsub.add_parser("inbox", help="page->agent messages, one JSON line each; --once exits after the first burst")
     r.add_argument("run_id")
+    r.add_argument("--once", action="store_true",
+                   help="block until a message arrives, print that burst, exit (for Bash run_in_background)")
     r = rsub.add_parser("report", help="write the self-contained report.html")
     r.add_argument("run_id")
     rsub.add_parser("list", help="list runs, newest first")

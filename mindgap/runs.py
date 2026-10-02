@@ -135,12 +135,16 @@ def post_inbox(run_id, kind, text, ref=None) -> dict:
     return msg
 
 
-def follow_inbox(run_id, poll=0.5, max_seconds=None):
+def follow_inbox(run_id, poll=0.5, max_seconds=None, once=False, burst=0.3):
     """Yield inbox lines the orchestrator has not been handed yet: first the backlog past
     the saved cursor, then new lines as they land (tail -f). A Monitor expires every
     <=30 min, so a message posted between expiry and re-arm must still arrive on re-arm.
     The cursor advances only when the consumer asks for the next line — i.e. after it
-    printed this one — so a kill mid-hand-off re-delivers rather than loses."""
+    printed this one — so a kill mid-hand-off re-delivers rather than loses.
+
+    once=True: block until at least one message, hand over that burst (lines landing
+    within `burst` s of each other), then return — for Bash run_in_background, which
+    notifies once on exit and never expires, instead of a 30-min Monitor."""
     d = _dir(run_id)
     path, cur_path = d / "inbox.jsonl", d / "inbox.cursor"
     path.touch()
@@ -150,10 +154,12 @@ def follow_inbox(run_id, poll=0.5, max_seconds=None):
         cursor = 0
     deadline = None if max_seconds is None else time.monotonic() + max_seconds
     with open(path, encoding="utf-8") as f:
-        buf = ""
+        buf, handed = "", None
         while deadline is None or time.monotonic() < deadline:
             chunk = f.readline()
             if not chunk:
+                if once and handed is not None and time.monotonic() - handed > burst:
+                    return
                 time.sleep(poll)
                 continue
             buf += chunk
@@ -169,6 +175,7 @@ def follow_inbox(run_id, poll=0.5, max_seconds=None):
             yield line
             cursor = seq
             cur_path.write_text(str(seq))
+            handed = time.monotonic()
 
 
 # ---- passive Workflow tailing ---------------------------------------------
@@ -250,21 +257,56 @@ def _workflow_agents(tdir: Path) -> list:
     return agents
 
 
+STALE_MS = 45 * 60 * 1000   # an announced agent with no done/implied end after this is shown as unconfirmed
+
+
+def _crit(label):
+    """'maker:C2-vision1' -> 'C2'; 'verifier:C3' -> 'C3'; None when unlabelled."""
+    m = re.match(r"^[^:]+:([A-Za-z]+\d+)", label or "")
+    return m.group(1) if m else None
+
+
 def _emitted_agents(run_id) -> list:
     """Agents the orchestrator announced itself (agent.start / agent.done), in the
-    same shape as Workflow agents so the page treats both alike."""
-    out = {}
+    same shape as Workflow agents so the page treats both alike. Orchestrators drift,
+    so this is tolerant: an agent.start without --phase inherits the latest
+    phase.start; a forgotten agent.done is inferred when the work visibly moved on
+    (a verifier for criterion X starting closes X's makers; a verdict on X closes X's
+    verifier); anything still open after STALE_MS reads 'unconfirmed', not 'running'."""
+    out, phase = {}, None
+
+    def close(a, ts):
+        if a["state"] == "running":
+            a.update(state="done", finishedAt=ts, inferred=True)
+
     for e in events(run_id):
         d = e.get("data") or {}
-        if e["kind"] == "agent.start":
-            out[d["id"]] = {"workflow": None, "agentId": d["id"], "label": d.get("label") or d["id"],
-                            "phase": e.get("phase"), "state": "running", "model": d.get("model"),
-                            "startedAt": e["ts"], "summary": None, "finishedAt": None, "result": None}
+        if e["kind"] == "phase.start":
+            phase = e.get("phase") or d.get("title") or phase
+        elif e["kind"] == "agent.start":
+            label = d.get("label") or d["id"]
+            role, crit = label.split(":", 1)[0], _crit(label)
+            if role == "verifier" and crit:
+                for a in out.values():
+                    if a["label"].startswith("maker:") and _crit(a["label"]) == crit:
+                        close(a, e["ts"])
+            out[d["id"]] = {"workflow": None, "agentId": d["id"], "label": label,
+                            "phase": e.get("phase") or phase, "state": "running", "model": d.get("model"),
+                            "startedAt": e["ts"], "summary": None, "finishedAt": None, "result": None,
+                            "inferred": False}
         elif e["kind"] == "agent.done" and d["id"] in out:
             a = out[d["id"]]
             result = d.get("result") if isinstance(d.get("result"), dict) else \
                 {k: d[k] for k in ("verdict", "headline", "gaps") if k in d}
-            a.update(state="done", finishedAt=e["ts"], result=result, summary=d.get("verdict"))
+            a.update(state="done", finishedAt=e["ts"], result=result, summary=d.get("verdict"), inferred=False)
+        elif e["kind"] == "verdict" and e.get("subject"):
+            for a in out.values():
+                if a["label"].startswith("verifier:") and _crit(a["label"]) == e["subject"]:
+                    close(a, e["ts"])
+    now = _now_ms()
+    for a in out.values():
+        if a["state"] == "running" and now - a["startedAt"] > STALE_MS:
+            a["state"] = "unconfirmed"
     return list(out.values())
 
 
@@ -288,10 +330,10 @@ def report(run_id) -> Path:
     html = (web / "run.html").read_text(encoding="utf-8")
     html = re.sub(r'<link rel="stylesheet" href="/([\w.-]+)">',
                   lambda m: "<style>\n" + (web / m.group(1)).read_text(encoding="utf-8") + "\n</style>", html)
-    html = re.sub(r'<script src="https?://[^"]+"></script>\n?', "", html)
+    html = re.sub(r'<script src="https?://[^"]+"[^>]*></script>\n?', "", html)
     panels = "\n".join(p.read_text(encoding="utf-8") for p in sorted(panels_dir(run_id).glob("*.js")))
     boot = "<script>window.__RUN__ = " + _script_safe(json.dumps(state)) + ";</script>\n"
-    html = re.sub(r'<script src="/([\w.-]+)"></script>',
+    html = re.sub(r'<script src="/([\w.-]+)"[^>]*></script>',
                   lambda m: (boot if m.group(1) == "run.js" else "") + "<script>\n"
                   + _script_safe((web / m.group(1)).read_text(encoding="utf-8")) + "\n</script>", html)
     html = html.replace("</body>", "<script>\n" + _script_safe(panels) + "\n</script>\n</body>")

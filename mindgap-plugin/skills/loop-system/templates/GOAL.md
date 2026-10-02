@@ -11,6 +11,19 @@ loop may start (hard gate).
 |---|-----------|----------------------------|
 | 1 | {{measurable criterion}} | {{exact check: command, comparison, vision check}} |
 
+### Controls (REQUIRED when any criterion is a metric, rate or gate on data)
+Fill per cv-planted-truth before any scarce spend (owner labels, val look,
+sealed, GPU retrain). Each row: the control + its expected outcome, or
+`N/A: <reason>`. Non-data goals: write `N/A: no data gate`.
+| # | Slot | Control → expected |
+|---|------|--------------------|
+| C1 | Headroom + event census | {{baseline on gate items; max margin; expected events per gated pool}} |
+| C2 | Null plant | {{identity arm → Δ = 0 exactly}} |
+| C3 | Positive plant | {{known-answer data through full path → recovered at claimed accuracy}} |
+| C4 | Gate fires | {{deliberately bad arm → gate returns FAIL}} |
+| C5 | Denominator ledger | {{declared counts per stage; skips counted with reasons}} |
+| C6 | Independence ledger | {{what each oracle/judge/split shares with the candidate}} |
+
 ## 3 · Verifier rubric
 The verifier receives ONLY: the artifact + sections 2–3 of this file.
 {{scoring guidance: what counts as pass per criterion, what evidence is required}}

@@ -29,9 +29,9 @@ P0 preflight + read memory → P1 acquire & distill → P2 extract figures → P
 (read + Confluence search + mindmap ingest) → P4 build explainer (maker) → P5 verify loop
 (independent verifier, budget 3) → P6 capture user feedback → P7 learn (auto-tune memory).
 
-**Live view (default-on; skip on "no live view").** At P0 invoke `live-view`
+**Live view (default-on; skip on "no live view").** At P0 invoke `mindgap:live-view`
 (`run start --skill arxiv-explainer --title "<arxiv-id> explainer"`), give the user the URL,
-arm the inbox Monitor, install `live-view/references/panels/criteria-progress.js`, and emit
+arm the inbox watcher (`run inbox --once` in the background), install `../live-view/references/panels/criteria-progress.js`, and emit
 one `claim` per `references/rubric.md` check (subject = the check id, e.g. `renders-clean`).
 `phase.start` per phase P0–P7; P4 maker and each P5 verifier as `agent.start`/`agent.done`
 (phases `"P5.<i> make"` / `"P5.<i> verify"`, labels `maker:explainer` / `verifier`; the

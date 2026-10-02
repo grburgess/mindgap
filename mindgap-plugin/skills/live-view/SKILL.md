@@ -35,12 +35,13 @@ curl -sf localhost:8765/api/runs >/dev/null || echo "need server"
   don't kill it; serve on `--port 8777` and use that port in the URL.
 - `mindgap run start --skill <skill> --title "<what is being decided>" [--port N]`
   → prints the run id + URL. **Give the user the URL in your next message.**
-- Arm the back-channel: `Monitor` with command `mindgap run inbox <run-id>`,
-  `timeout_ms` 1800000, description `live-view inbox <run-id>`. **Re-arm immediately on
-  expiry** for the life of the run — `run inbox` resumes from a saved cursor, so messages
-  posted while it was down arrive on re-arm, each exactly once. Each notification LINE is
-  one page message (JSON); messages <200 ms apart batch into one notification — reply to
-  every line, not just the first.
+- Arm the back-channel: **Bash with `run_in_background: true`** running
+  `mindgap run inbox <run-id> --once`. It blocks silently until the page posts, prints
+  that burst (one JSON message per line) and exits — you are notified exactly then, never
+  on a timer. Reply to EVERY line, then **re-arm the same command** at once. It resumes
+  from a saved cursor, so anything posted while it was down arrives on re-arm, each
+  message exactly once. Do NOT use a `Monitor` for this: a Monitor expires every ≤30 min
+  and each expiry wakes you for nothing (a real loop session logged 29 empty expiries).
 
 **2 · Bespoke panels** (optional; worth it when the task has a natural matrix/graph the
 court doesn't show — claims × lenses, criteria gauges, advocate positions)
@@ -65,7 +66,7 @@ page loads panels on (re)load — tell the user to refresh. Reuse a panel from
 | loop criteria / progress | `status` | `text`, criteria fields |
 | AskUserQuestion | **automatic** — the `mindgap-askuser-hook` (registered by `mindgap install`) mirrors `question.ask` at ask time and `question.answer` at answer time into this session's newest open run | only if the hook is absent: emit both by hand (`text`, `options` / `ref`, `text`) |
 | files produced | `artifact` | `kind`, `path` |
-| Task-tool subagent starts / returns (no Workflow to bind) | `agent.start` / `agent.done` | `id`, `label`, `model` / `id`, `verdict`, `headline` |
+| Task-tool subagent starts / returns (no Workflow to bind) | `agent.start` **with `--phase`** / `agent.done` — one done per start, verifiers included | `id`, `label`, `model` / `id`, `verdict`, `headline` |
 
 **Per-skill mapping.** idea-court: claims = ideas/claims, labels `<lens>:<claimId>`, panel
 `verdict-matrix.js`. loop-system: claims = GOAL §2 criteria `C<n>`, phases
@@ -80,7 +81,7 @@ cv-research: claims = SCOPE questions `Q<n>` (ANSWERED / PARTIAL / OPEN), scouts
 ids, loop mode (`"P5.<i> make/verify"`), panel `criteria-progress.js`. Once a run has
 `claim` events, a label suffix only attaches to a row when it names a declared claim.
 
-**4 · Handle inbox messages** (each Monitor event)
+**4 · Handle inbox messages** (each time the background `run inbox --once` exits)
 - `user.ask` → answer from evidence (agent results: `curl -s …/api/runs/<id>/agents`), then
   `emit reply --data '{"ref": <seq>, "text": …}'`. Keep answers grounded; cite the agent.
 - `flag.contest` → `emit note --subject open-check --data '{"ref": <seq>, "text": …}'`
@@ -102,6 +103,12 @@ ids, loop mode (`"P5.<i> make/verify"`), panel `criteria-progress.js`. Once a ru
   gets labels/phase/state from `<session>/workflows/wf_<id>.json` and results from
   `journal.jsonl`; a run that hasn't written the state file yet shows agent ids only.
 - The run log is files, not the graph — no DB writes until the final report registration.
+- Give every `claim` a `text` (the criterion / gap itself) — rows are otherwise bare ids.
+  The page infers a forgotten `agent.done` (verifier start closes that criterion's makers;
+  a verdict closes its verifier; >45 min open = "unconfirmed"), but explicit is better.
+- Always end a run (`emit run.end`): the askuser hook mirrors every later question of this
+  session into its newest OPEN run, so a forgotten run keeps absorbing unrelated questions.
+  Only interactive main sessions can ask — AskUserQuestion is absent in subagents and `claude -p`.
 - Replay a finished Workflow for demos/tests: `tools/live_view_replay.py <session-dir>
   <wf_runId> --run-id <id> [--duration 60]`; a loop's history:
   `tools/live_view_replay_loop.py <loop-dir> --run-id <id> [--duration 60]`; a
