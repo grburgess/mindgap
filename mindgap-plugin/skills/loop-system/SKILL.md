@@ -61,6 +61,9 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
      else none; seed the task-class list with kebab labels derived from
      §2 done-criteria. The only absolute model names written are the
      alias-ladder constant and the resolved sibling.
+     Advisor = fable when `advisorModel` is set and the advisor tool is
+     reachable, else none. With an advisor, an opus/high orchestrator
+     is the recommended ceiling; fable is never spawned as a subagent.
    - **Fill §4 auto-mode defaults (auto mode is ON by default):** write
      `Auto mode: on`, `Total budget ceiling` = Max sessions × Max
      iterations per session, and the standard Stop-and-notify trigger set.
@@ -158,6 +161,12 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
      value or the detected session model; old rows → difficulty tiers;
      resolve the classifier-sibling; seed task classes from §2. Show the
      user the migrated §6 and wait for confirmation before iterating.
+   - **§6 effort/advisor migration (additive):** if the §6 router table
+     lacks an `Effort` column, add it with the template defaults
+     (hard=high, normal=medium, bulk=low, check=medium) and add the
+     `Advisor:` line (resolve as in INIT). Never change existing tiers
+     or STATE.md routing overrides. Show the migrated §6 and wait for
+     confirmation; migrate only at session start, never mid-session.
    - **Re-read STATE fresh before writing any reconstruction (L6):** a
      session-start read can be stale (another session finalizing). If the
      re-read now shows the session complete/finalized, discard your

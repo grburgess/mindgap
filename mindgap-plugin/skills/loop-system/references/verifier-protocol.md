@@ -74,7 +74,7 @@ any hint of what answer is hoped for.
 
 ## Routing
 
-Verifier tier: cheapest-that-can-judge — haiku by default (cheap,
+Verifier tier: cheapest-that-can-judge — sonnet/medium by default, haiku/low for mechanical checks (cheap,
 independent context); bump toward the ceiling when the rubric needs
 deep domain judgment. Never make the verifier weaker than the rubric
 requires — a verifier that can't evaluate the criteria returns false

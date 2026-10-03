@@ -29,14 +29,15 @@ The verifier receives ONLY: the artifact + sections 2–3 of this file.
 Ceiling (auto-detected at INIT, not asked): {{session model}}
 Alias ladder: haiku < sonnet < opus < fable
 Classifier-block sibling: {{opus if ceiling is fable, else none — surface to user}}
+Advisor: {{fable via advisorModel if available, else none}} — consult at: GOAL gate, same failure twice, before marking COMPLETE
 
 Router — orchestrator tags each work item (difficulty + task class):
-| Tag    | Tier |
-|--------|------|
-| hard   | ceiling (omit model → inherit session model) |
-| normal | one tier below ceiling (clamp at haiku) |
-| bulk   | cheapest fast tier (haiku; sonnet if the class needs it) |
-| check  | cheapest-that-can-judge (haiku); ceiling for hard rubrics |
+| Tag    | Tier | Effort |
+|--------|------|--------|
+| hard   | ceiling (omit model → inherit session model) | high |
+| normal | one tier below ceiling (clamp at haiku) | medium |
+| bulk   | cheapest fast tier (haiku; sonnet if the class needs it) | low |
+| check  | cheapest-that-can-judge (sonnet; haiku for mechanical checks); ceiling for hard rubrics | medium (high for hard rubrics) |
 
 Seeded task classes: {{kebab labels derived from §2 done-criteria}}
 Learned promotions override the table above — see STATE.md § Routing overrides.
