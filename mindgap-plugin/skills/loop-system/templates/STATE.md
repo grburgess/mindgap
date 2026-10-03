@@ -41,6 +41,10 @@ Loop status: running
 <!-- stages 1–2 — investigate next session.
      Format: <YYYY-MM-DD> · symptom · hypothesis. -->
 
+## Advisor log
+<!-- one line per advisor call; see references/advisor-protocol.md -->
+none
+
 ## Iteration log
 <!-- one line per iteration:
      <session>.<iter> · class:<label> · tier:<used> · maker: <action> · verdict: PASS | gaps(<n>): <short> -->

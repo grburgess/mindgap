@@ -20,7 +20,7 @@ The verifier receives ONLY: the artifact + sections 2–3 of this file.
 - Max sessions before forced escalation: {{n}}
 - Auto mode: {{on}} — both-bounded: self-continue across sessions + run non-stop within. Default on; set `off` for a manual loop. See STATE.md § Auto mode.
 - Total budget ceiling: {{Max sessions × Max iterations per session}} total iterations — a hard stop across ALL sessions; auto mode never continues past it.
-- Stop-and-notify triggers: ceiling hit | session cap | 2× no-progress | irreversible/outward action (publish/delete/submit/send) | classifier-block with no §6 sibling | subagent null-twice | repeated maker thrash | loop complete. On any trigger: HALT + PushNotification, no further wakeup.
+- Stop-and-notify triggers: ceiling hit | session cap | 2× no-progress | irreversible/outward action (publish/delete/submit/send) | classifier-block with no §6 sibling | subagent null-twice | repeated maker thrash | advisor STOP | loop complete. On any trigger: HALT + PushNotification, no further wakeup.
 
 ## 5 · Escalation rule
 {{default: write blocker to STATE.md Open failures; end session with summary and a concrete question for the user}}
@@ -29,7 +29,7 @@ The verifier receives ONLY: the artifact + sections 2–3 of this file.
 Ceiling (auto-detected at INIT, not asked): {{session model}}
 Alias ladder: haiku < sonnet < opus < fable
 Classifier-block sibling: {{opus if ceiling is fable, else none — surface to user}}
-Advisor: {{fable via advisorModel if available, else none}} — consult at: GOAL gate, same failure twice, before marking COMPLETE
+Advisor: {{fable-subagent if ceiling < fable and the alias spawns, else none}} — checkpoints: plan gate, repeat failure, done gate (references/advisor-protocol.md)
 
 Router — orchestrator tags each work item (difficulty + task class):
 | Tag    | Tier | Effort |
