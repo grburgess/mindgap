@@ -26,19 +26,21 @@ const TYPE_COLORS = {
   stub: '#5d6565',
   finding: '#70c2be',
   reference: '#a5a16a',
+  event: '#a68f60',
   'verified-fact': '#a3d9bb',
   project: '#6287bf',
   idea: '#c9c4f3',
   fact: '#70996b',
   process: '#a1afde',
+  skill: '#8484c7',
   decision: '#9570a5',
   gotcha: '#d5bc70',
 };
 
 const SETTINGS_DEFAULTS = Object.freeze({
   charge: -260, linkDist: 55, linkStrength: 0.3, velocityDecay: 0.32, collide: true, gravity: 0.1, centerForce: 0, // physics
-  labelMode: 'hubs', linkOpacity: 0.30, arrows: true, starfield: true, autoRotate: false, edgeFlow: true, bloom: true, warp: true, ambient: true, // visual
-  colorBy: 'type', showHulls: true, showClusterLabels: true, clusterForce: false,    // clusters
+  labelMode: 'hubs', linkOpacity: 0.30, arrows: true, starfield: true, autoRotate: false, edgeFlow: true, bloom: true, warp: true, ambient: true, recallFire: true, // visual
+  colorBy: 'type', showHulls: true, showClusterLabels: true, showClusterLegend: true, clusterForce: false,    // clusters
   theme: 'editorial',                                                                // appearance
 });
 function loadSettings() {
@@ -106,6 +108,7 @@ function applyTheme(name) {
   const t = THEMES[name] || THEMES.editorial;
   for (const k in t) document.documentElement.style.setProperty(k, t[k]);
   if (graph) graph.backgroundColor(t['--bg']);
+  if (window.Instanced3d) Instanced3d.refreshBg();   // recall-firing dims toward the bg
 }
 
 const state = {
@@ -291,10 +294,11 @@ function drawLabel2d(n, ctx, scale) {
 /* ---------- live activity: 'neurons firing' (Neural Vault-style) ----------
    Poll /api/activity for node touches recorded by the MCP server (or POSTed by
    external hooks); flash touched nodes (green read / red write), spread an
-   attenuated pulse to 1-hop neighbours, fade out over ACT_FADE_MS. 2D only —
-   the 3D InstancedMesh path would need per-instance color churn. While any
+   attenuated pulse to 1-hop neighbours, fade out over ACT_FADE_MS. While any
    flash is live we hold autoPauseRedraw(false) so the idle canvas keeps
-   painting frames, then re-idle. */
+   painting frames, then re-idle. 3D hands off to Instanced3d: a recall digest
+   (actor recall:* / prompt-recall:*) fires the full recall view, anything else
+   gets a light flash (act3d). */
 const ACT_POLL_MS = 1000, ACT_FADE_MS = 2600, ACT_SPREAD = 0.35;
 const ACT_COLORS = { read: '#7cbc8d', write: '#c98570' };
 const act = { since: 0, primed: false, flashes: new Map(), painting: false };
@@ -376,10 +380,22 @@ async function actPoll() {
     act.since = d.now;
     // first response just sets the cursor — don't replay the historical tail
     if (act.primed && state.mode === '2d') actApply(d.events);
+    else if (act.primed && state.mode === '3d' && window.Instanced3d) act3d(d.events);
     act.primed = true;
   } catch { /* server briefly gone; keep polling */ }
 }
 setInterval(actPoll, ACT_POLL_MS);
+const RECALL_ACTOR = /^(prompt-)?recall(:|$)/;
+function act3d(events) {
+  let recall = null;
+  const touched = [];
+  for (const e of events) {
+    if (state.settings.recallFire && RECALL_ACTOR.test(e.actor || '')) recall = e;   // newest digest wins
+    else touched.push(...(e.ids || []));
+  }
+  if (recall) Instanced3d.fire(recall.ids || []);
+  if (touched.length) Instanced3d.flash(touched);
+}
 
 // drop far-flung members so a hull hugs its dense core instead of sprawling
 function trimOutliers(pts) {
@@ -786,6 +802,7 @@ function renderGraph() {
       onClick: handleNodeClick,
       nodeLabel: nodeTooltip,
       getSettings: () => state.settings,
+      bg: themeBg,
       dragRipple,                 // kinematic-fallback multi-hop follow (same weights as the 2D drag)
       // live-vs-kinematic drag contract shared with the 2D path: small graphs drag with the sim
       // live (org-roam-ui style); huge graphs freeze forces for the gesture so a hot post-drop
@@ -1449,6 +1466,7 @@ function onSettingChange(kind) {
     renderLegend();
     applyEdgeFlow(graph);
     if (state.mode === '3d' && window.Glow3d) Glow3d.refresh();
+    if (state.mode === '3d' && window.Instanced3d && !state.settings.recallFire) Instanced3d.clearFiring();
     if (state.mode === '3d' && window.Starfield) Starfield.refresh();
     if (state.mode === '3d' && window.Bloom) Bloom.refresh();
     if (state.mode === '3d' && window.Warp) Warp.refresh();
@@ -1472,6 +1490,7 @@ const TOGGLES = [
   ['Bloom', 'bloom', 'visual'],
   ['Warp', 'warp', 'visual'],
   ['Ambient', 'ambient', 'visual'],
+  ['Recall firing', 'recallFire', 'visual'],
 ];
 
 function renderSettings() {
@@ -1511,6 +1530,7 @@ function renderSettings() {
       <button class="seg-toggle ${s.colorBy === 'community' ? 'on' : ''}" id="set-colorby">Color by <b>${s.colorBy}</b></button>
       <button class="seg-toggle ${s.showHulls ? 'on' : ''}" data-key="showHulls" data-kind="cluster">Topic glow <b>${s.showHulls ? 'on' : 'off'}</b></button>
       <button class="seg-toggle ${s.showClusterLabels ? 'on' : ''}" data-key="showClusterLabels" data-kind="cluster">Cluster labels <b>${s.showClusterLabels ? 'on' : 'off'}</b></button>
+      <button class="seg-toggle ${s.showClusterLegend ? 'on' : ''}" data-key="showClusterLegend" data-kind="cluster">Cluster box <b>${s.showClusterLegend ? 'on' : 'off'}</b></button>
       <button class="seg-toggle ${s.clusterForce ? 'on' : ''}" data-key="clusterForce" data-kind="physics">Topic repulsion <b>${s.clusterForce ? 'on' : 'off'}</b></button>
     </div>
     <div class="actions"><button id="set-reset">Reset to defaults</button></div>`;
@@ -1566,7 +1586,9 @@ function renderSettings() {
 
 function renderLegend() {
   const C = state.clusters, el = $('#legend');
-  if (!C || state.settings.colorBy !== 'community') { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  if (!C || state.settings.colorBy !== 'community' || !state.settings.showClusterLegend) {
+    el.classList.add('hidden'); el.innerHTML = ''; return;
+  }
   el.innerHTML = `<h3><span>clusters</span><span class="scount">${C.k}</span></h3><ul>` + C.communities.map((c) =>
     `<li class="leg ${state.activeCluster === c.idx ? 'active' : ''}" data-c="${c.idx}">
        <i style="--tc:${c.color}"></i>${esc(c.hubTitle)} <span class="mono dim">${c.size}</span></li>`).join('') + '</ul>';
@@ -1611,6 +1633,7 @@ document.addEventListener('keydown', (e) => {
     if (!$('#help').classList.contains('hidden')) $('#help').classList.add('hidden');
     else if (!$('#switcher').classList.contains('hidden')) qsClose();
     else if (!$('#settings').classList.contains('hidden')) $('#settings').classList.add('hidden');
+    else if (window.Instanced3d && Instanced3d.firing()) Instanced3d.clearFiring();
     else if (state.focusRoots.size) clearFocus();
     else closeSidebar();
   }

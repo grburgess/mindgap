@@ -29,6 +29,18 @@ P0 preflight + read memory → P1 acquire & distill → P2 extract figures → P
 (read + Confluence search + mindmap ingest) → P4 build explainer (maker) → P5 verify loop
 (independent verifier, budget 3) → P6 capture user feedback → P7 learn (auto-tune memory).
 
+**Live view (default-on; skip on "no live view").** At P0 invoke `mindgap:live-view`
+(`run start --skill arxiv-explainer --title "<arxiv-id> explainer"`), give the user the URL,
+arm the inbox watcher (`run inbox --once` in the background), install `../live-view/references/panels/criteria-progress.js`, and emit
+one `claim` per `references/rubric.md` check (subject = the check id, e.g. `renders-clean`).
+`phase.start` per phase P0–P7; P4 maker and each P5 verifier as `agent.start`/`agent.done`
+(phases `"P5.<i> make"` / `"P5.<i> verify"`, labels `maker:explainer` / `verifier`; the
+verifier's `agent.done` carries its PASS/FAIL), then a `verdict` per check with
+`data.iteration` = `P5.<i>` — FAIL for every check named in `gaps`, PASS for the rest. End:
+`decision` go (PASS) / hold (budget hit), `artifact` (the explainer), `run.end`,
+`run report`. P6 user feedback may arrive on the page as `user.ask`/`flag.contest`; weight it
+as user feedback in P7.
+
 Read at P0, every run: `LESSONS.md`, `references/rubric.md`, `references/patterns.md`.
 State lives at `$MINDGAP_HOME/learning/arxiv-explainer/`. If `LESSONS.md` is missing, create it
 from `templates/LESSONS.stub.md` — a fresh install starts with an empty ledger.
