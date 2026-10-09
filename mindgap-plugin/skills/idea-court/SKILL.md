@@ -23,10 +23,6 @@ Planning a survey (use deep-research); executing one (loop-system); capturing on
 
 Precedent-hunting fan-out (does an integrated system already solve the whole spec?): references/wf-precedent-fanout.js.
 
-**Live view (default-on; skip on "no live view").** Before stage 2, invoke the `live-view` skill: `run start`, give the user the URL, arm the inbox watcher (`run inbox --once` in the background), and install `../live-view/references/panels/verdict-matrix.js` (labels must stay `<lens>:<claimId>`). Emit `claim` per idea/claim, `phase.start` per stage, `run bind` right after each Workflow launch, then reconciled `verdict`s, `ruling`, `decision` (go/no-go/hold), and `note`s for kill fork + dissent. A page `flag.contest` becomes a stage-2 check next round — it never flips a verdict by itself. Stage 5 ends with `run report`; link report.html from the `decision-*` node's urls.
-
-**Advisor (when the session model is below fable):** consult a read-only fable subagent at three checkpoints per `../loop-system/references/advisor-protocol.md` — claim list fixed (before the stage-2 Workflow), the same stage failing twice, and the judge's ruling written (before stage 5 staging). STOP halts the court for the user; REVISE changes are applied or the refusal recorded. Record each call as an `Advisor:` line in the `decision-*` node body and a live-view `note`. Session model = fable → no advisor.
-
 ## Non-negotiable grading rules (each fixed a real failure)
 
 1. **Contribution, not sufficiency.** An idea is REFUTED only if its CORE mechanism is contradicted. Every WEAKENED/REFUTED verdict MUST emit a `surviving_core` and a `next_test` — the surviving cores are what the debate later builds from (the ranked-first idea in the reference run scored 0.5 after its novelty was demolished). Refuters told to "refute unless it explains everything" kill everything; weakest-link roll-ups are the same trap.
@@ -39,7 +35,7 @@ Precedent-hunting fan-out (does an integrated system already solve the whole spe
 ## Runtime gotchas (will burn a session if unknown)
 
 - Workflow synthesis agents are **blocked from Write** ("return findings as text") — synthesis RETURNS fenced markdown; the orchestrator extracts and writes the file.
-- Model tiers per user CLAUDE.md: scouts/lenses `opus`, mechanical `haiku` low, judge/synthesis omit model + `effort:'high'`. `sonnet` = 5.5 (works since 2026-10-03); on `[1m]`/variant sessions aliases die at spawn — probe per session.
+- Model tiers per user CLAUDE.md: scouts/lenses `opus`, mechanical `haiku` low, judge/synthesis omit model + `effort:'high'`. `sonnet` alias broken; on `[1m]`/variant sessions aliases die at spawn — probe per session.
 - MCP servers cache auth at startup; after a gcloud re-auth use the `bq` CLI, not the BigQuery MCP.
 - `mindgap_ingest` validates edges whole-payload (no partial commit); `created_by` ∈ {`loop:<name>`, `manual`, `mcp`, `skill:*`}; keep payloads out of context (generate JSON with a script, ingest via `mindgap ingest - < payload.json`).
 - Read a completed workflow's truncated result from its task output file with python, not into context.

@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import activity, config, db, runs
+from . import activity, config, db
 
 WEB_DIR = config.web_dir()
 
@@ -39,10 +39,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
-        if path == "/runs" or path.startswith("/runs/"):
-            return self._static("/run.html")     # one shell; run.js reads the id from the URL
-        if path == "/api/runs" or path.startswith("/api/runs/"):
-            return self._handle(lambda: self._runs_get(path))
         if not path.startswith("/api/"):
             return self._static(path)
         q = self._qs()
@@ -81,8 +77,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "invalid JSON"}, 400)
         if not isinstance(payload, dict):
             return self._json({"error": "payload must be a JSON object"}, 400)
-        if path.startswith("/api/runs/"):
-            return self._handle(lambda: self._runs_post(path, payload))
         conn = db.connect()
         try:
             def handle():
@@ -129,47 +123,6 @@ class Handler(BaseHTTPRequestHandler):
             self._handle(handle)
         finally:
             conn.close()
-
-    # ---- live-view runs (runs.py); no db connection needed ----
-
-    def _runs_get(self, path):
-        parts = [unquote(p) for p in path[len("/api/runs"):].split("/") if p]
-        q = self._qs()
-        if not parts:
-            return self._json({"runs": runs.list_runs()})
-        rid, rest = parts[0], parts[1:]
-        if rest == ["events"]:
-            self._json({"view": runs.view(rid), "events": runs.events(rid, int(q("since", "0") or 0))})
-        elif rest == ["agents"]:
-            self._json({"agents": runs.agents(rid)})
-        elif rest == ["panels"]:
-            d = runs.panels_dir(rid)
-            self._json({"panels": sorted(p.name for p in d.glob("*.js")) if d.is_dir() else []})
-        elif len(rest) == 2 and rest[0] == "panels":
-            d = runs.panels_dir(rid)
-            file = (d / rest[1]).resolve()
-            if not file.is_relative_to(d.resolve()) or file.suffix != ".js" or not file.is_file():
-                return self._json({"error": "not found"}, 404)
-            self._bytes(file.read_bytes(), "text/javascript")
-        else:
-            self._json({"error": "not found"}, 404)
-
-    def _runs_post(self, path, payload):
-        parts = [unquote(p) for p in path[len("/api/runs"):].split("/") if p]
-        if len(parts) == 2 and parts[1] == "inbox":
-            self._json(runs.post_inbox(parts[0], payload.get("kind"), payload.get("text"), payload.get("ref")))
-        elif len(parts) == 2 and parts[1] == "report":
-            self._json({"path": str(runs.report(parts[0]))})
-        else:
-            self._json({"error": "not found"}, 404)
-
-    def _bytes(self, data, ctype):
-        self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        self.wfile.write(data)
 
     def _static(self, path):
         rel = "index.html" if path == "/" else unquote(path).lstrip("/")

@@ -20,15 +20,6 @@ real gaps, not naive clarifiers. It plans — it never executes the research.
 - Otherwise run the phases: GROUND → GAP → DIVERGE → [DEEP THINK] →
   CONVERGE → PAY BACK. Full protocol: `references/phases.md`.
 
-**Live view (default-on; skip on "no live view").** At GROUND invoke `mindgap:live-view`
-(`run start --skill deep-research`), give the user the URL, arm the inbox watcher (`run inbox --once` in the background). Emit
-`phase.start` per phase, `claim` per gap (`G<n>`) — every DIVERGE question and its answer is
-mirrored by the askuser hook (the page shows how long each waited on the user) — `run bind` for a DEEP THINK Workflow, and at CONVERGE a `verdict` per gap —
-`ADDRESSED` (`text` names the RQ), `COVERED` (by evidence), `DEFERRED`, or `STRUCK` — plus
-`artifact` for the plan doc. PAY BACK: `decision` go (approved) / hold (revise), `run.end`,
-`run report`, and add report.html to the research-plan node's `urls`. A page
-`flag.contest` on a gap reopens it as a DIVERGE question.
-
 ## The phases, one line each
 
 1. **GROUND** — second-brain RETRIEVE on the topic (enrich subgraph is the
@@ -49,9 +40,7 @@ mirrored by the askuser hook (the page shows how long each waited on the user) �
 
 - Plans, never executes — execution is loop-system (multi-session) or a
   normal second-brain-wrapped task (one-shot).
-- No new stores, no state files. Outputs: the plan doc + graph nodes only. (The
-  `live-view` run log is the one exception: display + report only, never read back as
-  memory.)
+- No new stores, no state files. Outputs: the plan doc + graph nodes only.
 - DEEP THINK scouts are read-only; the Workflow opt-in rule is absolute.
 - Loop handoff PASTES goal + done-criteria candidates into the INIT
   conversation; it never writes loop files — loop-system owns them.

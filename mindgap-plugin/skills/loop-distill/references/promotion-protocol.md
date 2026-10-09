@@ -85,7 +85,6 @@ See .claude/PROJECT-LEARNINGS.md for the full ledger.
 | mechanical fixes (`dead-map`, `stuck`) | auto — a `stuck` reset only when STATE mtime >24h AND `Last session` is not today; a `dead-map` id is never synthesised (`references/audit-checks.md` § Auto-fix boundary) |
 | project `CLAUDE.md` | **gated — show diff, wait** |
 | `~/.claude/skills/**` | **gated** |
-| `mindgap-plugin/skills/**` | **gated** |
 | `<project>/.claude/skills/**` | **gated** |
 | any retire / delete, anywhere | **gated — show list, wait** |
 

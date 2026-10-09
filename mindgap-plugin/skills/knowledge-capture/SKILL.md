@@ -16,7 +16,7 @@ reversibly. The full ingest protocol is **AGENTS.md** (binding); essentials belo
 
 ## Step 1 — relevance gate (do this FIRST)
 Read the transcript / recall the session. Ask: does it contain **durable, on-domain**
-learnings (domain = `capture.json` `domain.description`; the hook puts it in your prompt, so don't go read the file)? Ephemeral chatter, config
+learnings (domain = `capture.json` `domain.description`)? Ephemeral chatter, config
 edits, and off-domain work → **write nothing and stop.** Papers read for learning →
 defer to `paper-to-mindmap` (it owns `paper` nodes); don't double-ingest.
 
@@ -35,9 +35,7 @@ Cap at `capture.max_nodes_per_session` nodes. Raise confidence only when re-deri
 existing node from an independent source (AGENTS.md confidence rule).
 
 ## Step 4 — finish
-Stop. The hook's supervisor releases `~/.mindgap/capture.lock` when you exit
-(and kills the run after `capture.timeout_s`). Gate decisions land in
-`~/.mindgap/capture.log`, your output in `capture-child.log`.
+Delete the lock file at `~/.mindgap/capture.lock` so the next session can capture.
 
 ## Health
 `mindgap lint` reports orphans, dangling stubs, near-duplicate candidates, and

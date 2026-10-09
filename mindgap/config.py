@@ -10,7 +10,6 @@ USER DATA is per-user, outside the repo, created on demand:
     data_dir()        $MINDGAP_HOME if set, else ~/.mindgap
     db_path()         $MINDGAP_DB if set, else <data_dir>/mindgap.db
     snapshots_dir()   <data_dir>/snapshots
-    runs_dir()        <data_dir>/runs (live-view run logs)
 
 Migration source: legacy_data_dir() = the old repo data/ (file still named mindmap.db).
 """
@@ -61,13 +60,6 @@ def frontier_path() -> Path:
 
 def activity_path() -> Path:
     return data_dir() / "activity.jsonl"
-
-
-def runs_dir() -> Path:
-    """Live-view run logs, one dir per monitored skill run (see runs.py)."""
-    d = data_dir() / "runs"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
 
 
 def ledger_path() -> Path:

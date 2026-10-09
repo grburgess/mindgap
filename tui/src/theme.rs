@@ -23,18 +23,16 @@ pub const TYPE_COLORS: &[(&str, u8, u8, u8)] = &[
     ("stub", 0x5d, 0x65, 0x65),
     ("finding", 0x70, 0xc2, 0xbe),
     ("reference", 0xa5, 0xa1, 0x6a),
-    ("event", 0xa6, 0x8f, 0x60),
     ("verified-fact", 0xa3, 0xd9, 0xbb),
     ("project", 0x62, 0x87, 0xbf),
     ("idea", 0xc9, 0xc4, 0xf3),
     ("fact", 0x70, 0x99, 0x6b),
     ("process", 0xa1, 0xaf, 0xde),
-    ("skill", 0x84, 0x84, 0xc7),
     ("decision", 0x95, 0x70, 0xa5),
     ("gotcha", 0xd5, 0xbc, 0x70),
 ];
 
-/// The graph holds ~48 distinct types; 25 are canonical. The rest get a
+/// The graph holds ~48 distinct types; 23 are canonical. The rest get a
 /// stable hue derived from the name, so the long tail stays readable instead of
 /// collapsing into one gray.
 pub fn type_color(node_type: &str) -> Color {
