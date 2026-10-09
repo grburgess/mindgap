@@ -15,7 +15,7 @@ const stubEngine = (on: any, calls: string[][], opened: string[] = []) => {
 }
 
 const mountPane = ($: any, surface: (typeof SURFACES)[number]) =>
-  $.ui.mount({ plugin: 'mindgap', surface, component: 'Pane', requestId: 'cape-recall', props: { title: 'Recall' } })
+  $.ui.mount({ plugin: 'mindgap', surface, component: 'Pane', requestId: 'mm-recall', props: { title: 'Recall' } })
 
 test('terms keeps first three long words', () => {
   expect(terms('Fix the Mindmap recall pane quickly')).toBe('mindmap recall pane')

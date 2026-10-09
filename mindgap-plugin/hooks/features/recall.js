@@ -3,7 +3,7 @@
 // via /mm recall (commands.js), never unasked.
 
 
-export const PANE = 'cape-recall'
+export const PANE = 'mm-recall'
 const MAX = 10
 
 // Query terms: first few words >= 4 chars.

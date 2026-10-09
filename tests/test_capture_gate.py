@@ -37,9 +37,9 @@ class GateTest(unittest.TestCase):
         self.assertFalse(capture.keyword_hits("nothing", ["roof"]))
 
     def test_keyword_hits_whole_words_only(self):
-        self.assertFalse(capture.keyword_hits("press escape", ["cape"]))
+        self.assertFalse(capture.keyword_hits("concatenate", ["cat"]))
         self.assertFalse(capture.keyword_hits("a proofreader", ["roof"]))
-        self.assertTrue(capture.keyword_hits("Cape Analytics", ["cape"]))
+        self.assertTrue(capture.keyword_hits("Cat flap", ["cat"]))
         self.assertTrue(capture.keyword_hits("two roofs", ["roof"]))
         self.assertTrue(capture.keyword_hits("do remote sensing", ["remote sensing"]))
 
