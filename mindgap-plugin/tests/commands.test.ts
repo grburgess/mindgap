@@ -49,6 +49,6 @@ test('/mm recall opens the Recall pane', async ($, on) => {
   stub(on, [])
   on('ui.open', async (_$: any, e: any) => { opened.push(e.id); return { value: { isPlaced: true } } as any })
   const r: any = await $.command.run({ command: 'mm', args: 'recall' } as any)
-  expect(opened).toEqual(['cape-recall'])
+  expect(opened).toEqual(['mm-recall'])
   expect(r.text).toMatch(/^recall pane: \d+ node/)
 })
