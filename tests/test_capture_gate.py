@@ -1,3 +1,4 @@
+import json
 import tempfile
 import time
 import unittest
@@ -13,11 +14,20 @@ def cfg(**over):
     return base
 
 
+def user(text):
+    return json.dumps({"type": "user", "message": {"role": "user", "content": text}})
+
+
+def assistant(text):
+    return json.dumps({"type": "assistant", "message": {
+        "role": "assistant", "content": [{"type": "text", "text": text}]}})
+
+
 class GateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.tx = Path(self.tmp.name) / "transcript.jsonl"
-        self.tx.write_text("user: how does the roof segmentation model work?\n" * 5)
+        self.tx.write_text((user("how does the roof segmentation model work?") + "\n") * 5)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -25,6 +35,40 @@ class GateTest(unittest.TestCase):
     def test_keyword_hits(self):
         self.assertTrue(capture.keyword_hits("a ROOF here", ["roof"]))
         self.assertFalse(capture.keyword_hits("nothing", ["roof"]))
+
+    def test_keyword_hits_whole_words_only(self):
+        self.assertFalse(capture.keyword_hits("press escape", ["cape"]))
+        self.assertFalse(capture.keyword_hits("a proofreader", ["roof"]))
+        self.assertTrue(capture.keyword_hits("Cape Analytics", ["cape"]))
+        self.assertTrue(capture.keyword_hits("two roofs", ["roof"]))
+        self.assertTrue(capture.keyword_hits("do remote sensing", ["remote sensing"]))
+
+    def test_message_text_skips_hooks_tools_and_meta(self):
+        lines = [
+            json.dumps({"type": "attachment", "attachment": {"content": "mindgap recall roof"}}),
+            json.dumps({"type": "user", "message": {"role": "user", "content": [
+                {"type": "tool_result", "content": "roof parcel"}]}}),
+            json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
+                {"type": "tool_use", "name": "Bash", "input": {"command": "grep roof"}}]}}),
+            json.dumps({"type": "user", "isMeta": True, "message": {"role": "user", "content": "roof"}}),
+            "not json roof",
+            user("hello"), assistant("hi there"),
+        ]
+        text = capture.message_text("\n".join(lines))
+        self.assertIn("hello", text); self.assertIn("hi there", text)
+        self.assertNotIn("roof", text)
+
+    def test_keywords_only_in_hook_output_do_not_pass(self):
+        self.tx.write_text("\n".join([
+            json.dumps({"type": "attachment", "attachment": {"content": "mindgap recall roof " * 50}}),
+            user("fix my zsh prompt"), assistant("done")]))
+        ok, why = capture.pregate(str(self.tx), self.tmp.name, cfg(), env={})
+        self.assertFalse(ok); self.assertEqual(why, "no-domain-keywords")
+
+    def test_assistant_text_counts(self):
+        self.tx.write_text("\n".join([user("x" * 20), assistant("the parcel boundary")]))
+        ok, why = capture.pregate(str(self.tx), self.tmp.name, cfg(), env={})
+        self.assertTrue(ok, why)
 
     def test_pass_when_on_domain(self):
         ok, why = capture.pregate(str(self.tx), self.tmp.name, cfg(), env={})
