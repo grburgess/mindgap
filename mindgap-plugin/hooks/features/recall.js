@@ -1,8 +1,9 @@
 // F1 recall pane: run `mindgap find <terms> --json` on session start and
-// each prompt, list recalled nodes in a pane, each droppable.
+// each prompt, list recalled nodes in a pane, each droppable. Pane opens only
+// via /mm recall (commands.js), never unasked.
 
 
-const PANE = 'cape-recall'
+export const PANE = 'cape-recall'
 const MAX = 10
 
 // Query terms: first few words >= 4 chars.
@@ -29,7 +30,6 @@ export function register(on, shared) {
         shared.recalled = [...shared.recalled, ...fresh]
         shared.counters.recalled += fresh.length
         $.ui.invalidate('ui.render')
-        $.ui.open({ id: PANE, title: 'Recall' }).catch(() => {})
       }
     } catch {}
     return next(e)
@@ -44,7 +44,6 @@ export function register(on, shared) {
         shared.recalled = [...shared.recalled, ...fresh]
         shared.counters.recalled += fresh.length
         $.ui.invalidate('ui.render')
-        $.ui.open({ id: PANE, title: 'Recall' }).catch(() => {})
       }
     }
     return next(e)

@@ -1,9 +1,10 @@
-// commands feature: /todo <text>, /mm find <q>, /mm flush. No Claude turn.
+// commands feature: /todo <text>, /mm find <q>, /mm recall, /mm flush. No Claude turn.
+import { PANE } from './recall.js'
 
 export function register(on, shared) {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'todo', description: 'Add an open todo to mindgap' })
-    await $.command.register({ name: 'mm', description: 'mindgap: find <q> | flush' })
+    await $.command.register({ name: 'mm', description: 'mindgap: find <q> | recall | flush' })
     return next(e)
   })
 
@@ -23,9 +24,13 @@ export function register(on, shared) {
       const r = await $.process.run(['mindgap', 'find', rest.join(' ')])
       return { text: r.exitCode === 0 ? (r.stdout || '').trim() || 'no matches' : `find failed: ${r.stderr || r.stdout}` }
     }
+    if (sub === 'recall') {
+      await $.ui.open({ id: PANE, title: 'Recall' })
+      return { text: `recall pane: ${shared.recalled.length} node(s)` }
+    }
     if (sub === 'flush') {
       return next(e) // answered by capture.js's /mm flush hook
     }
-    return { text: 'usage: /mm find <q> | /mm flush' }
+    return { text: 'usage: /mm find <q> | /mm recall | /mm flush' }
   })
 }

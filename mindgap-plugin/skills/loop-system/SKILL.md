@@ -61,6 +61,11 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
      else none; seed the task-class list with kebab labels derived from
      §2 done-criteria. The only absolute model names written are the
      alias-ladder constant and the resolved sibling.
+     Advisor = `fable-subagent` when the ceiling is below fable and the
+     alias spawns, else `none` (references/advisor-protocol.md). An
+     opus/high orchestrator + fable advisor is the recommended setup;
+     the advisor is the only sanctioned fable subagent (read-only, ≤3
+     calls/session).
    - **Fill §4 auto-mode defaults (auto mode is ON by default):** write
      `Auto mode: on`, `Total budget ceiling` = Max sessions × Max
      iterations per session, and the standard Stop-and-notify trigger set.
@@ -118,7 +123,9 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
    Caveat to state once: ScheduleWakeup-based self-continuation lives only
    as long as this REPL; a cold restart resumes via the manual "continue
    the loop" line (or opt-in OS cron), never the in-memory scheduler.
-6. **Run session 1** (below).
+6. **Advisor plan gate:** if §6 `Advisor: fable-subagent`, consult it
+   on GOAL.md before session 1 (references/advisor-protocol.md).
+7. **Run session 1** (below).
 
 ## RESUME
 
@@ -158,6 +165,13 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
      value or the detected session model; old rows → difficulty tiers;
      resolve the classifier-sibling; seed task classes from §2. Show the
      user the migrated §6 and wait for confirmation before iterating.
+   - **§6 effort/advisor migration (additive):** if the §6 router table
+     lacks an `Effort` column, add it with the template defaults
+     (hard=high, normal=medium, bulk=low, check=medium) and add the
+     `Advisor:` line (resolve as in INIT) and an empty STATE.md
+     `## Advisor log`. Never change existing tiers
+     or STATE.md routing overrides. Show the migrated §6 and wait for
+     confirmation; migrate only at session start, never mid-session.
    - **Re-read STATE fresh before writing any reconstruction (L6):** a
      session-start read can be stale (another session finalizing). If the
      re-read now shows the session complete/finalized, discard your
@@ -215,8 +229,8 @@ is on, HALT + PushNotification the moment any GOAL §4 stop-and-notify
 trigger fires — cumulative iterations ≥ the §4 ceiling, session count ≥
 the cap, 2× no substantive progress, a required irreversible/outward
 action (publish/delete/submit/send — these NEVER fire unattended), a
-classifier-block with no §6 sibling, a subagent null-twice, or repeated
-maker thrash. A halt writes `halt reason` in STATE § Auto mode and
+classifier-block with no §6 sibling, a subagent null-twice, repeated
+maker thrash, or an advisor STOP. A halt writes `halt reason` in STATE § Auto mode and
 schedules NO wakeup. Auto-continuation keys ONLY on GOAL §2 criteria + the
 §4 ceiling — never an execution-time proxy (tempted to halt on a metric
 not in §2? re-gate it into §2 or drop it).
@@ -302,6 +316,13 @@ no progress for 2 consecutive iterations — orchestrator judges the
 gap sets substantively unchanged (same criteria failing for the same
 reasons), not string-identical — OR current session number (STATE.md `Last session`) ≥
 GOAL.md `Max sessions before forced escalation` → forced escalation.
+
+**Advisor checkpoints** (only when §6 `Advisor: fable-subagent`; protocol
+in references/advisor-protocol.md): the FIRST time the same failure
+recurs (same criterion, same reason) consult it before the next maker;
+a second recurrence in the session escalates without re-consulting.
+Before writing `complete` or `escalated` at SESSION END, consult it with
+the final verifier results. Log every call to STATE § Advisor log.
 
 ## SESSION END — never skip, runs even on escalation or failure
 

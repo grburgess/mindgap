@@ -41,5 +41,14 @@ test('/mm flush with empty queue answers without CLI', async ($, on) => {
 test('/mm unknown sub shows usage', async ($, on) => {
   stub(on, [])
   const r: any = await $.command.run({ command: 'mm', args: 'nope' } as any)
-  expect(r.text).toBe('usage: /mm find <q> | /mm flush')
+  expect(r.text).toBe('usage: /mm find <q> | /mm recall | /mm flush')
+})
+
+test('/mm recall opens the Recall pane', async ($, on) => {
+  const opened: string[] = []
+  stub(on, [])
+  on('ui.open', async (_$: any, e: any) => { opened.push(e.id); return { value: { isPlaced: true } } as any })
+  const r: any = await $.command.run({ command: 'mm', args: 'recall' } as any)
+  expect(opened).toEqual(['cape-recall'])
+  expect(r.text).toMatch(/^recall pane: \d+ node/)
 })
