@@ -3,7 +3,7 @@
 ## 1 · GROUND
 
 Run second-brain's layered pull
-(`~/.claude/skills/second-brain/references/retrieval.md`) on the research
+(`../../second-brain/references/retrieval.md`) on the research
 topic. The centerpiece is `mindgap_mine_enrich(seed=<topic node or
 term>)` — the 2–3-hop subgraph is the map of what's already known. Keep the
 context diet: carry forward the nodes that bear on the question, not the
@@ -99,7 +99,7 @@ Present it like any brainstorming design and get approval before PAY BACK.
 
 ## 6 · PAY BACK
 
-Second-brain UPDATE (`~/.claude/skills/second-brain/references/update.md`),
+Second-brain UPDATE (`../second-brain/references/update.md`),
 plus the plan registration — always, regardless of doc location:
 
 ```json

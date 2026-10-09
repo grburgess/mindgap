@@ -11,6 +11,19 @@ loop may start (hard gate).
 |---|-----------|----------------------------|
 | 1 | {{measurable criterion}} | {{exact check: command, comparison, vision check}} |
 
+### Controls (REQUIRED when any criterion is a metric, rate or gate on data)
+Fill per cv-planted-truth before any scarce spend (owner labels, val look,
+sealed, GPU retrain). Each row: the control + its expected outcome, or
+`N/A: <reason>`. Non-data goals: write `N/A: no data gate`.
+| # | Slot | Control → expected |
+|---|------|--------------------|
+| C1 | Headroom + event census | {{baseline on gate items; max margin; expected events per gated pool}} |
+| C2 | Null plant | {{identity arm → Δ = 0 exactly}} |
+| C3 | Positive plant | {{known-answer data through full path → recovered at claimed accuracy}} |
+| C4 | Gate fires | {{deliberately bad arm → gate returns FAIL}} |
+| C5 | Denominator ledger | {{declared counts per stage; skips counted with reasons}} |
+| C6 | Independence ledger | {{what each oracle/judge/split shares with the candidate}} |
+
 ## 3 · Verifier rubric
 The verifier receives ONLY: the artifact + sections 2–3 of this file.
 {{scoring guidance: what counts as pass per criterion, what evidence is required}}
@@ -20,7 +33,7 @@ The verifier receives ONLY: the artifact + sections 2–3 of this file.
 - Max sessions before forced escalation: {{n}}
 - Auto mode: {{on}} — both-bounded: self-continue across sessions + run non-stop within. Default on; set `off` for a manual loop. See STATE.md § Auto mode.
 - Total budget ceiling: {{Max sessions × Max iterations per session}} total iterations — a hard stop across ALL sessions; auto mode never continues past it.
-- Stop-and-notify triggers: ceiling hit | session cap | 2× no-progress | irreversible/outward action (publish/delete/submit/send) | classifier-block with no §6 sibling | subagent null-twice | repeated maker thrash | loop complete. On any trigger: HALT + PushNotification, no further wakeup.
+- Stop-and-notify triggers: ceiling hit | session cap | 2× no-progress | irreversible/outward action (publish/delete/submit/send) | classifier-block with no §6 sibling | subagent null-twice | repeated maker thrash | advisor STOP | loop complete. On any trigger: HALT + PushNotification, no further wakeup.
 
 ## 5 · Escalation rule
 {{default: write blocker to STATE.md Open failures; end session with summary and a concrete question for the user}}
@@ -29,14 +42,15 @@ The verifier receives ONLY: the artifact + sections 2–3 of this file.
 Ceiling (auto-detected at INIT, not asked): {{session model}}
 Alias ladder: haiku < sonnet < opus < fable
 Classifier-block sibling: {{opus if ceiling is fable, else none — surface to user}}
+Advisor: {{fable-subagent if ceiling < fable and the alias spawns, else none}} — checkpoints: plan gate, repeat failure, done gate (references/advisor-protocol.md)
 
 Router — orchestrator tags each work item (difficulty + task class):
-| Tag    | Tier |
-|--------|------|
-| hard   | ceiling (omit model → inherit session model) |
-| normal | one tier below ceiling (clamp at haiku) |
-| bulk   | cheapest fast tier (haiku; sonnet if the class needs it) |
-| check  | cheapest-that-can-judge (haiku); ceiling for hard rubrics |
+| Tag    | Tier | Effort |
+|--------|------|--------|
+| hard   | ceiling (omit model → inherit session model) | high |
+| normal | one tier below ceiling (clamp at haiku) | medium |
+| bulk   | cheapest fast tier (haiku; sonnet if the class needs it) | low |
+| check  | cheapest-that-can-judge (sonnet; haiku for mechanical checks); ceiling for hard rubrics | medium (high for hard rubrics) |
 
 Seeded task classes: {{kebab labels derived from §2 done-criteria}}
 Learned promotions override the table above — see STATE.md § Routing overrides.

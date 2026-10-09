@@ -62,12 +62,35 @@ def load_config(path=None) -> dict:
 
 
 import os as _os
+import re as _re
 import time as _time
 
 
 def keyword_hits(text: str, keywords) -> bool:
-    low = text.lower()
-    return any(k.lower() in low for k in keywords)
+    """Whole-word, case-insensitive; a trailing plural s/es still matches."""
+    return any(_re.search(r"\b" + _re.escape(k) + r"(?:s|es)?\b", text, _re.I)
+               for k in keywords)
+
+
+def message_text(jsonl: str) -> str:
+    """User + assistant prose from a transcript JSONL. Skips hook attachments,
+    tool calls/results and meta records, which carry our own recall output."""
+    out = []
+    for line in jsonl.splitlines():
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(rec, dict) or rec.get("type") not in ("user", "assistant") \
+                or rec.get("isMeta"):
+            continue
+        content = (rec.get("message") or {}).get("content")
+        if isinstance(content, str):
+            out.append(content)
+        elif isinstance(content, list):
+            out.extend(b.get("text", "") for b in content
+                       if isinstance(b, dict) and b.get("type") == "text")
+    return "\n".join(out)
 
 
 def _expand(p: str) -> str:
@@ -106,7 +129,7 @@ def pregate(transcript_path, cwd, cfg, env=None):
         return False, "unreadable-transcript"
     if len(text.encode("utf-8", "ignore")) < cfg.get("min_transcript_bytes", 0):
         return False, "transcript-too-small"
-    if not keyword_hits(text, cfg.get("domain", {}).get("keywords", [])):
+    if not keyword_hits(message_text(text), cfg.get("domain", {}).get("keywords", [])):
         return False, "no-domain-keywords"
     return True, "ok"
 

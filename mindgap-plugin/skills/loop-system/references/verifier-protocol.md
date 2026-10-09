@@ -43,6 +43,11 @@ any hint of what answer is hoped for.
   if it contradicts the artifact, distrust that verifier's other
   glance-based evidence for the run (see lessons.md 2026-06-12).
 
+- **Data gates need their controls.** When GOAL.md §2 has a Controls
+  block, a metric PASS whose artifact lacks recorded C1–C6 results — or
+  where C4 (gate fires) was never observed failing — is a gap, not a
+  pass. Cite the missing slot.
+
 ## Verifier prompt skeleton
 
 > You are an independent verifier. Judge ONLY the artifact below
@@ -74,7 +79,7 @@ any hint of what answer is hoped for.
 
 ## Routing
 
-Verifier tier: cheapest-that-can-judge — haiku by default (cheap,
+Verifier tier: cheapest-that-can-judge — sonnet/medium by default, haiku/low for mechanical checks (cheap,
 independent context); bump toward the ceiling when the rubric needs
 deep domain judgment. Never make the verifier weaker than the rubric
 requires — a verifier that can't evaluate the criteria returns false

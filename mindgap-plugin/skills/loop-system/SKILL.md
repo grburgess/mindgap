@@ -61,6 +61,11 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
      else none; seed the task-class list with kebab labels derived from
      §2 done-criteria. The only absolute model names written are the
      alias-ladder constant and the resolved sibling.
+     Advisor = `fable-subagent` when the ceiling is below fable and the
+     alias spawns, else `none` (references/advisor-protocol.md). An
+     opus/high orchestrator + fable advisor is the recommended setup;
+     the advisor is the only sanctioned fable subagent (read-only, ≤3
+     calls/session).
    - **Fill §4 auto-mode defaults (auto mode is ON by default):** write
      `Auto mode: on`, `Total budget ceiling` = Max sessions × Max
      iterations per session, and the standard Stop-and-notify trigger set.
@@ -80,7 +85,7 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
    - Create empty `artifacts/` dir.
    - **Seed the project ledger:** if `<project>/.claude/PROJECT-LEARNINGS.md`
      is absent, create it from
-     `~/.claude/skills/loop-distill/templates/PROJECT-LEARNINGS.md`,
+     `../loop-distill/templates/PROJECT-LEARNINGS.md` (sibling skill, relative to this skill's base dir),
      **filling its placeholders** — `{{project-name}}` = this project, and
      replace the header line "Distilled by `loop-distill` {{YYYY-MM-DD}}"
      with "Seeded by `loop-system` INIT <today's date> — not yet
@@ -118,7 +123,9 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
    Caveat to state once: ScheduleWakeup-based self-continuation lives only
    as long as this REPL; a cold restart resumes via the manual "continue
    the loop" line (or opt-in OS cron), never the in-memory scheduler.
-6. **Run session 1** (below).
+6. **Advisor plan gate:** if §6 `Advisor: fable-subagent`, consult it
+   on GOAL.md before session 1 (references/advisor-protocol.md).
+7. **Run session 1** (below).
 
 ## RESUME
 
@@ -158,6 +165,13 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
      value or the detected session model; old rows → difficulty tiers;
      resolve the classifier-sibling; seed task classes from §2. Show the
      user the migrated §6 and wait for confirmation before iterating.
+   - **§6 effort/advisor migration (additive):** if the §6 router table
+     lacks an `Effort` column, add it with the template defaults
+     (hard=high, normal=medium, bulk=low, check=medium) and add the
+     `Advisor:` line (resolve as in INIT) and an empty STATE.md
+     `## Advisor log`. Never change existing tiers
+     or STATE.md routing overrides. Show the migrated §6 and wait for
+     confirmation; migrate only at session start, never mid-session.
    - **Re-read STATE fresh before writing any reconstruction (L6):** a
      session-start read can be stale (another session finalizing). If the
      re-read now shows the session complete/finalized, discard your
@@ -200,6 +214,10 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
      re-scan current ground truth (id/title/path sweep on the focus
      keywords) BEFORE dispatching makers; re-scope if the gap has
      closed/collided.
+   - **Live view:** start it now (SESSION § Live view) and give the user
+     the URL before the first maker, unless the user said "no live view".
+     It is a resume step, not optional preamble: a resumed session that
+     skips it leaves the user asking where the page is.
    - Run the next session.
 
 ## SESSION
@@ -211,11 +229,26 @@ is on, HALT + PushNotification the moment any GOAL §4 stop-and-notify
 trigger fires — cumulative iterations ≥ the §4 ceiling, session count ≥
 the cap, 2× no substantive progress, a required irreversible/outward
 action (publish/delete/submit/send — these NEVER fire unattended), a
-classifier-block with no §6 sibling, a subagent null-twice, or repeated
-maker thrash. A halt writes `halt reason` in STATE § Auto mode and
+classifier-block with no §6 sibling, a subagent null-twice, repeated
+maker thrash, or an advisor STOP. A halt writes `halt reason` in STATE § Auto mode and
 schedules NO wakeup. Auto-continuation keys ONLY on GOAL §2 criteria + the
 §4 ceiling — never an execution-time proxy (tempted to halt on a metric
 not in §2? re-gate it into §2 or drop it).
+
+**Live view (default-on; skip on "no live view").** At session start invoke the
+`mindgap:live-view` skill: `run start --skill loop-system --title "<loop> · session <N>"`, give
+the user the URL, arm the inbox watcher (`run inbox --once` in the background), install
+`../live-view/references/panels/criteria-progress.js`, and emit one `claim` per GOAL §2
+criterion (subject `C<n>`, `text` = the criterion) plus a `verdict` ONLY for criteria that
+already have a real verifier result in STATE (`data.iteration` = that session's iteration).
+A criterion never verified gets NO verdict — it renders as pending; seeding it as FAIL
+paints the whole page red before any work has run. Per iteration: `phase.start "<s>.<i> make"` → the maker (Workflow engine:
+`run bind` the transcriptDir; Task engine: `agent.start`/`agent.done` with
+`label "maker:<class>"`) → `phase.start "<s>.<i> verify"` → the verifier the same way
+(`agent.done` `verdict` PASS/FAIL, `headline` = gaps) → one `verdict` per criterion it
+graded (`data.iteration`). A page `flag.contest` joins the next maker's gap list; it never
+overrides the verifier. SESSION END: `decision` go (complete) / hold (running) / no-go
+(escalated), `run.end`, `run report`.
 
 Each iteration:
 
@@ -232,6 +265,17 @@ every workflow maker exactly as to a Shape 1 maker.)
    writes files in a git repo, isolate it — create/enter a git worktree
    for it first. Non-git project → no worktrees; makers run
    sequentially only.
+
+   **Orchestrator-owned completion watch:** whenever a maker launches a
+   long remote job (cluster/COW, CI, a queue) or reports "monitor armed /
+   waiting on background work", the ORCHESTRATOR arms its own background
+   completion check at once: an until-loop on the job state or output
+   files that exits on success AND on every failure signature (job failed,
+   per-item FAIL marker, auth expired). Never rely on the maker's
+   self-armed watcher. Background makers park on those watchers and are
+   not re-woken (lessons.md 2026-07-14, 2026-09-17, 2026-09-29: 6 parks in
+   one session). Silence from a parked maker looks exactly like "still
+   running".
 
    **Artifact-existence check (before the verifier):** confirm the
    files the maker reported writing actually exist (`ls`/`wc -l` what
@@ -273,6 +317,13 @@ gap sets substantively unchanged (same criteria failing for the same
 reasons), not string-identical — OR current session number (STATE.md `Last session`) ≥
 GOAL.md `Max sessions before forced escalation` → forced escalation.
 
+**Advisor checkpoints** (only when §6 `Advisor: fable-subagent`; protocol
+in references/advisor-protocol.md): the FIRST time the same failure
+recurs (same criterion, same reason) consult it before the next maker;
+a second recurrence in the session escalates without re-consulting.
+Before writing `complete` or `escalated` at SESSION END, consult it with
+the final verifier results. Log every call to STATE § Advisor log.
+
 ## SESSION END — never skip, runs even on escalation or failure
 
 1. **Update STATE.md:** rewrite `Last session` AND `Loop status` —
@@ -282,6 +333,11 @@ GOAL.md `Max sessions before forced escalation` → forced escalation.
    one: `loop-distill`'s `unclosed` check keys on the absence of
    `Loop status: complete`, so a finished loop that never gets the line is
    flagged forever and the resulting proposal has nothing to apply.
+   **Edit STATE/GOAL only via `templates/state_edit.py`** (`replace_section`,
+   `append_to_section`, `replace_once`; `sys.path.insert` the templates dir):
+   a hand-rolled `s.index("## X")` slice can match a heading quoted inside a
+   header comment, yield an empty slice, and `str.replace("", body)` then
+   splices body between every character (fired 5×; lessons.md 2026-09-25..30).
    Then promote memory —
    open failure → investigated → verifier-confirmed → `Verified facts`
    (with method + date); pattern seen ≥2× → `General rules`.
@@ -352,7 +408,7 @@ GOAL.md `Max sessions before forced escalation` → forced escalation.
      row. Protocol: $MINDGAP_HOME/learning/loop-system/global-learnings.md § Mindmap mirror. Prune/promote is usage-based, not
      recency-based, and is handled by the structure pass
      (references/structure-pass.md). Promoting a candidate into a
-     new/updated `~/.claude/skills/` entry stays approval-gated — propose
+     new/updated skill (`~/.claude/skills/**` or `mindgap-plugin/skills/**`) stays approval-gated — propose
      it, apply only with user approval.
    - Meta-lessons (this skill misfired: bad scaffold, wrong engine
      choice, vague rubric passed the gate) → append
@@ -375,7 +431,7 @@ GOAL.md `Max sessions before forced escalation` → forced escalation.
      surface the unresolved structural-fix backlog, and propose
      usage-based retire/promote. Skip otherwise.
    - **Project distill (cross-loop):** if this session COMPLETED the loop or
-     hit forced escalation, invoke the `loop-distill` skill. It reconciles
+     hit forced escalation, invoke the `mindgap:loop-distill` skill. It reconciles
      every loop in the project into
      `<project>/.claude/PROJECT-LEARNINGS.md`, audits loop health, and
      promotes outward under its own write gates — and it consumes the

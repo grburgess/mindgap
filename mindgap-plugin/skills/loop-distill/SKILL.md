@@ -22,6 +22,7 @@ read-mostly, and it is never a gate — nothing found here can fail a loop.
 ```
 GLOBAL   global-learnings.md  +  mindgap
          ~/.claude/skills/**                        (tier-2, gated)
+         mindgap-plugin/skills/**              (tier-2, gated)
    |
 PROJECT  <project>/CLAUDE.md            <- one marked block, gated diff
          <project>/.claude/PROJECT-LEARNINGS.md     <- ledger, authoritative
@@ -192,6 +193,7 @@ layer exists to prevent.
 | mechanical fixes (`dead-map`, `stuck`) | auto — `stuck` reset only at mtime >24h AND `Last session` not today; a `dead-map` id is never synthesised |
 | project `CLAUDE.md` | **gated — show diff, wait** |
 | `~/.claude/skills/**` | **gated** |
+| `mindgap-plugin/skills/**` | **gated** |
 | `<project>/.claude/skills/**` | **gated** |
 | any retire / delete, anywhere | **gated — show list, wait** |
 
