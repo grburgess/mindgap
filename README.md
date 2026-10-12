@@ -62,7 +62,7 @@ The repo ships `.opencode/opencode.json` — it registers the `mindgap` MCP serv
 (`./bin/mindgap-mcp`, active only inside this repo), pins the `model` to
 `bonsai/bonsai2-27b` (provider merged from your global
 `~/.config/opencode/opencode.json`; delete the line to use another model), and
-opencode auto-loads the protocol in [AGENTS.md](AGENTS.md). Eleven skills are
+opencode auto-loads the protocol in [AGENTS.md](AGENTS.md). Twelve skills are
 picked up from `.opencode/skills/` (a symlink to `mindgap-plugin/skills/`). So
 a source checkout just works — run `opencode` in the repo and say the same
 things:
