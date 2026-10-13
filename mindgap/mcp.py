@@ -13,7 +13,7 @@ from . import config, db
 
 PROTOCOL_VERSION = "2025-06-18"
 SUPPORTED_VERSIONS = {"2025-06-18", "2025-03-26", "2024-11-05"}
-SERVER_INFO = {"name": "mindgap", "version": "0.1.0"}
+SERVER_INFO = {"name": "mindgap", "version": "0.2.0"}
 INSTRUCTIONS = (
     "Local org-roam-style knowledge graph. Prefer mindgap_ingest for batch writes "
     "(it validates edge endpoints whole-payload, no partial commit) and returns the "

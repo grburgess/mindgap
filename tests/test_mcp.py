@@ -118,7 +118,7 @@ class McpDispatchTest(unittest.TestCase):
         self.assertNotIn("resources", res["capabilities"])
         self.assertNotIn("prompts", res["capabilities"])
         self.assertEqual(res["serverInfo"]["name"], "mindgap")
-        self.assertEqual(res["serverInfo"]["version"], "0.1.0")
+        self.assertEqual(res["serverInfo"]["version"], "0.2.0")
 
     def test_initialize_unknown_version_falls_back(self):
         resp = mcp.dispatch(
