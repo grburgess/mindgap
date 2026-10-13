@@ -396,12 +396,13 @@ def install_hooks(settings_path=None, bin_dir=None, include_capture=False) -> li
         groups = hooks.setdefault(event, [])
         # An existing entry for this hook, as its launcher or `python -m mindgap.<module>`.
         mine = [(g, h) for g in groups for h in g.get("hooks", []) if _runs_hook(h.get("command", ""), script)]
-        if any(Path(h["command"].split()[0]).exists() for _, h in mine):
+        target = str(bin_dir / script)
+        if any(h["command"] == target or Path(h["command"].split()[0]).exists() for _, h in mine):
             continue
         for g, h in mine:   # dangling, e.g. a pipx venv left behind by a move to uv
             g["hooks"].remove(h)
         hooks[event] = groups = [g for g in groups if g.get("hooks")]
-        hook = {"type": "command", "command": str(bin_dir / script)}
+        hook = {"type": "command", "command": target}
         if is_async:
             hook["async"] = True
         groups.append({"matcher": matcher, "hooks": [hook]} if matcher else {"hooks": [hook]})

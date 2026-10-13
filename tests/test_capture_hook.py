@@ -93,6 +93,8 @@ class CaptureHookTest(unittest.TestCase):
             for tool in ("mindgap_context", "mindgap_find", "mindgap_ingest"):
                 self.assertIn(srv + tool, argv)
         self.assertNotIn("delete the lock", " ".join(argv))
+        # let the detached child finish writing before tearDown removes its dir
+        self.assertTrue(self._wait(lambda: "session=S exit=" in self._log()), self._log())
 
     def test_lock_released_when_child_exits(self):
         self._run({"transcript_path": str(self.tx), "cwd": "/tmp/r", "session_id": "S2"})

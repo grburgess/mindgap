@@ -88,6 +88,12 @@ class InstallHooksTest(unittest.TestCase):
         self.assertEqual(self.session_start_cmds(), [str(self.bin / "mindgap-recall-hook")])
         self.assertIn("SessionStart", added)
 
+    def test_idempotent_before_launchers_are_linked(self):
+        # bin/ not populated yet: our own command must not count as dangling
+        cli.install_hooks(settings_path=self.settings, bin_dir=self.bin)
+        self.assertEqual(cli.install_hooks(settings_path=self.settings, bin_dir=self.bin), [])
+        self.assertEqual(self.session_start_cmds(), [str(self.bin / "mindgap-recall-hook")])
+
     def test_unrelated_hooks_are_kept(self):
         self.write_session_start("/usr/bin/true")
         cli.install_hooks(settings_path=self.settings, bin_dir=self.bin)
