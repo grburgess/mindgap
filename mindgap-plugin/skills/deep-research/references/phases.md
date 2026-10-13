@@ -99,7 +99,7 @@ Present it like any brainstorming design and get approval before PAY BACK.
 
 ## 6 · PAY BACK
 
-Second-brain UPDATE (`../second-brain/references/update.md`),
+Second-brain UPDATE (`../../second-brain/references/update.md`),
 plus the plan registration — always, regardless of doc location:
 
 ```json
