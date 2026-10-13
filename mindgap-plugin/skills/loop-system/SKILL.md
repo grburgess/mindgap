@@ -47,6 +47,13 @@ Scan `self-learning-loop/*/STATE.md` under the project root:
      closes, or mark it provisional in GOAL §2 until the first pilot. A bar
      the method can't reach at part of the prior only surfaces sessions
      later, as an escalation (popinf-gates criterion 5, 2026-09-23).
+   - **Executability:** when the artifact must run against an external
+     system (SQL, an API request, a shell command), add a criterion that
+     actually exercises it cheaply — a BigQuery `dry_run`, a request-schema
+     validation, a `--dry-run`/`-n` parse — not only substring or mocked
+     asserts. An all-offline PASS is proxy-complete, never final, until the
+     artifact has run for real: offline asserts passed 7/7 on SQL that did
+     not parse (lessons.md 2026-07-02).
    - If the user can't supply a measurable criterion, propose a proxy:
      a verifier checklist of N observable properties. If they decline
      proxies too, refuse to loop — do the task one-shot and say why.
@@ -290,6 +297,17 @@ every workflow maker exactly as to a Shape 1 maker.)
    not re-woken (lessons.md 2026-07-14, 2026-09-17, 2026-09-29: 6 parks in
    one session). Silence from a parked maker looks exactly like "still
    running".
+
+   **Context diet (every maker prompt):** the orchestrator INLINES the
+   spec excerpts, signatures and prior-artifact facts the maker needs; it
+   does not tell the maker to read the spec, CLAUDE.md or large reference
+   docs. Makers read only the files they will edit and pipe command output
+   through `tail`. Read-heavy makers overrun their context and
+   autocompact-thrash, returning null over work that often did land
+   (lessons.md 2026-07-02). The same diet binds every design, critique or
+   review panel the skill spawns for its own meta-work, and an inlined
+   brief alone is not enough: the prompt must also FORBID file reads and
+   cap tool calls, and prefer a mid tier at medium effort.
 
    **Artifact-existence check (before the verifier):** confirm the
    files the maker reported writing actually exist (`ls`/`wc -l` what
