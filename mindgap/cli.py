@@ -298,10 +298,13 @@ def cmd_init(args):
 def install_symlinks(bin_dir=None) -> list:
     """Symlink the source-mode launcher scripts (bin/mindgap*) into bin_dir
     (default ~/.local/bin), pointing at this checkout. Idempotent.
-    Returns the names linked."""
+    Returns the names linked; none for a package install (uv tool / pipx),
+    which puts its own launchers on PATH and has no bin/ dir to link."""
     bin_dir = Path(bin_dir) if bin_dir else Path.home() / ".local" / "bin"
-    bin_dir.mkdir(parents=True, exist_ok=True)
     src_bin = config.PKG_DIR.parent / "bin"
+    if not src_bin.is_dir():
+        return []
+    bin_dir.mkdir(parents=True, exist_ok=True)
     linked = []
     for script in sorted(src_bin.iterdir()):
         if not os.access(script, os.X_OK):
@@ -367,10 +370,21 @@ DEFAULT_HOOKS = [("SessionStart", "mindgap-recall-hook", None, False),
 CAPTURE_HOOK = ("SessionEnd", "mindgap-capture-hook", None, False)
 
 
+def _runs_hook(command, script) -> bool:
+    """Does this hook command run `script` (e.g. mindgap-recall-hook), either via its
+    launcher or as `<python> -m mindgap.recall_hook`?"""
+    parts = command.split()
+    if not parts:
+        return False
+    module = "mindgap." + script.removeprefix("mindgap-").replace("-", "_")
+    return Path(parts[0]).name == script or (len(parts) >= 3 and parts[1:3] == ["-m", module])
+
+
 def install_hooks(settings_path=None, bin_dir=None, include_capture=False) -> list:
     """Register DEFAULT_HOOKS (plus CAPTURE_HOOK if include_capture) in Claude Code's
-    user settings. Idempotent: an event that already runs a command with the same
-    script name (any path) is left alone, and every other key is preserved. Backs
+    user settings. Idempotent: an event that already runs the hook (its launcher at
+    any path, or `python -m mindgap.<module>`) is left alone while that command still
+    exists; a dangling one is repointed. Every other key is preserved. Backs
     the file up once to settings.json.bak. Returns the events added."""
     settings_path = Path(settings_path) if settings_path else Path.home() / ".claude" / "settings.json"
     bin_dir = Path(bin_dir) if bin_dir else Path.home() / ".local" / "bin"
@@ -380,9 +394,13 @@ def install_hooks(settings_path=None, bin_dir=None, include_capture=False) -> li
     wanted = DEFAULT_HOOKS + [CAPTURE_HOOK] if include_capture else DEFAULT_HOOKS
     for event, script, matcher, is_async in wanted:
         groups = hooks.setdefault(event, [])
-        cmds = [h.get("command", "") for g in groups for h in g.get("hooks", [])]
-        if any(Path(c.split()[0]).name == script for c in cmds if c.strip()):
+        # An existing entry for this hook, as its launcher or `python -m mindgap.<module>`.
+        mine = [(g, h) for g in groups for h in g.get("hooks", []) if _runs_hook(h.get("command", ""), script)]
+        if any(Path(h["command"].split()[0]).exists() for _, h in mine):
             continue
+        for g, h in mine:   # dangling, e.g. a pipx venv left behind by a move to uv
+            g["hooks"].remove(h)
+        hooks[event] = groups = [g for g in groups if g.get("hooks")]
         hook = {"type": "command", "command": str(bin_dir / script)}
         if is_async:
             hook["async"] = True
@@ -418,7 +436,7 @@ def migrate_skill_ledgers(skills_dir=None, global_dir=None) -> dict:
     whatever a from-scratch $MINDGAP_HOME/learning ledger has accumulated since.
     Returns {"moved": [...], "conflicts": [...]}."""
     skills_dir = Path(skills_dir) if skills_dir else Path.home() / ".claude" / "skills"
-    global_dir = Path(global_dir) if global_dir else Path.home() / "self_learning_global"
+    global_dir = Path(global_dir) if global_dir else config.learning_dir()
     moved, conflicts = [], []
 
     def _move(src, dst):
@@ -457,7 +475,8 @@ def check_legacy_pip_package(path=None) -> list:
 def cmd_install(args):
     bin_dir = Path.home() / ".local" / "bin"
     linked = install_symlinks(bin_dir)
-    print(f"linked {', '.join(linked)} -> {bin_dir}")
+    if linked:
+        print(f"linked {', '.join(linked)} -> {bin_dir}")
     if str(bin_dir) not in os.environ.get("PATH", "").split(os.pathsep):
         print(f"note: add {bin_dir} to PATH")
     pruned = prune_dangling_launchers(bin_dir)
@@ -474,7 +493,7 @@ def cmd_install(args):
     ledgers = migrate_skill_ledgers()
     if ledgers["moved"]:
         print(f"migrated {len(ledgers['moved'])} legacy skill-ledger file(s)/dir(s) "
-              f"into {Path.home() / 'self_learning_global'}")
+              f"into {config.learning_dir()}")
     for c in ledgers["conflicts"]:
         print(f"note: legacy ledger left in place (destination already exists, merge by hand): {c}")
 

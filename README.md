@@ -14,7 +14,7 @@ An agent looping toward a goal needs somewhere to look before it starts and some
 
 ## Quickstart
 
-    pipx install git+https://github.com/grburgess/mindgap.git
+    uv tool install git+https://github.com/grburgess/mindgap.git
     mindgap init      # create ~/.mindgap/mindgap.db + a small demo graph
     mindgap serve     # open the web UI at http://localhost:8765
 
@@ -33,10 +33,17 @@ Stdlib-only Python 3.10 — no pip installs. Data lives in a single SQLite file.
 Pick one. All paths put `mindgap` (and `mindgap-mcp`) on your PATH and store data in
 `~/.mindgap` (override with `MINDGAP_HOME`, or `MINDGAP_DB` for just the DB file).
 
-**pipx (recommended):**
-    pipx install git+https://github.com/grburgess/mindgap.git
+**uv (recommended):**
+    uv tool install git+https://github.com/grburgess/mindgap.git
     mindgap init        # creates ~/.mindgap/mindgap.db and seeds it
     mindgap serve       # web UI at http://localhost:8765
+
+Upgrade with `uv tool upgrade mindgap`. Moving from a pipx install: `pipx uninstall mindgap`,
+then the `uv tool install` above, then `mindgap install` to repoint the Claude Code hooks.
+
+**pipx:**
+    pipx install git+https://github.com/grburgess/mindgap.git
+    mindgap init && mindgap serve
 
 **pip:**
     pip install --user git+https://github.com/grburgess/mindgap.git

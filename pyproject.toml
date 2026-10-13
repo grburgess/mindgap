@@ -16,6 +16,9 @@ dependencies = []
 mindgap = "mindgap.cli:main"
 mindgap-mcp = "mindgap.mcp:main"
 mindgap-capture-hook = "mindgap.capture_hook:main"
+mindgap-recall-hook = "mindgap.recall_hook:main"
+mindgap-prompt-recall-hook = "mindgap.prompt_recall_hook:main"
+mindgap-askuser-hook = "mindgap.askuser_hook:main"
 
 [tool.setuptools.packages.find]
 include = ["mindgap*"]

@@ -1,0 +1,6 @@
+#!/bin/sh
+# PreToolUse + PostToolUse hook (AskUserQuestion): mirror questions and answers into the live-view run. Async, never blocks.
+SELF=$0
+while [ -L "$SELF" ]; do SELF=$(readlink "$SELF"); done
+REPO=$(CDPATH= cd -- "$(dirname -- "$SELF")/.." && pwd)
+PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m mindgap.askuser_hook "$@"

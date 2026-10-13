@@ -4,7 +4,9 @@ set -e
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)   # this script's dir = repo root
 
 # 1. Put `mindgap` + `mindgap-mcp` on PATH.
-if command -v pipx >/dev/null 2>&1; then
+if command -v uv >/dev/null 2>&1; then
+  uv tool install --force --reinstall "$REPO"; MODE=uv
+elif command -v pipx >/dev/null 2>&1; then
   pipx install --force "$REPO"; MODE=pipx
 elif python3 -m pip --version >/dev/null 2>&1; then
   python3 -m pip install --user "$REPO"; MODE=pip
@@ -41,6 +43,6 @@ echo
 echo "installed ($MODE). data dir: ${MINDGAP_HOME:-$HOME/.mindgap}"
 echo "  mindgap serve                          # web UI at http://localhost:8765"
 echo "  mindtop                                # terminal UI (if the build above succeeded)"
-echo "  claude mcp add mindgap mindgap-mcp     # register MCP for Claude Code (after pip/pipx)"
+echo "  claude mcp add mindgap mindgap-mcp     # register MCP for Claude Code (after uv/pipx/pip)"
 echo "  /plugin marketplace add grburgess/mindgap && /plugin install mindgap   # skills + MCP"
 echo "  opencode                            # in the repo, .opencode/opencode.json registers the MCP + bonsai model (any-dir: see README)"
