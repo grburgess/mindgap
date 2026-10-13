@@ -57,7 +57,7 @@ then the `uv tool install` above, then `mindgap install` to repoint the Claude C
 ### Claude Code plugin (skills + MCP)
     /plugin marketplace add grburgess/mindgap
     /plugin install mindgap
-Registers the `mindgap` MCP server and eleven skills: `arxiv-explainer`, `deep-research`, `idea-court`, `inbox-to-mindmap`, `knowledge-capture`, `loop-distill`, `loop-system`, `paper-to-mindmap`, `papers-library`, `second-brain`, and `todo-mindmap`.
+Registers the `mindgap` MCP server and twelve skills: `arxiv-explainer`, `deep-research`, `idea-court`, `inbox-to-mindmap`, `knowledge-capture`, `live-view`, `loop-distill`, `loop-system`, `paper-to-mindmap`, `papers-library`, `second-brain`, and `todo-mindmap`.
 Register the MCP at **user scope** so every Claude Code session, in any directory, can reach the graph:
 
     claude mcp add -s user mindgap mindgap-mcp   # global; needs mindgap-mcp on PATH
