@@ -12,5 +12,8 @@ Local org-roam-style knowledge graph (SQLite + stdlib Python 3.10 + web UI). No 
 - `mindgap-plugin/skills/` is GENERATED from the upstream private repo by
   `tools/export-mindgap.sh`. Do not edit these files here — changes are
   overwritten on the next export. Fix upstream and re-export.
+- If an edit lands here anyway, backport it before the next export: on the
+  machine with the upstream checkout, `git pull` here, then run
+  `tools/backport-skills.sh <upstream-skills-dir>` (no arg prints the patch).
 - Learning ledgers live in `$MINDGAP_HOME/learning/` (default
   `~/.mindgap/learning/`), never in this repo.
