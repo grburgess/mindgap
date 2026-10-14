@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import activity, config, db, runs
+from . import activity, config, db, iterm, runs
 
 WEB_DIR = config.web_dir()
 
@@ -191,5 +191,8 @@ def run(port=8765, open_browser=True):
     url = f"http://localhost:{port}"
     print(f"mindgap serving at {url}")
     if open_browser:
-        webbrowser.open(url)
+        if iterm.enabled():
+            iterm.open_url(url)
+        else:
+            webbrowser.open(url)
     server.serve_forever()
