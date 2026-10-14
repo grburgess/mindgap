@@ -54,6 +54,11 @@ then the `uv tool install` above, then `mindgap install` to repoint the Claude C
     ./install.sh        # self-locating: PATH + ~/.mindgap + seed
     mindgap serve
 
+**Optional, iTerm2 users:** to open the UI and live views in iTerm2's built-in browser instead of
+your system browser, add `export MINDGAP_BROWSER=iterm` (optionally `MINDGAP_ITERM_SPLIT=horizontal`)
+to `~/.zshenv`, then start Claude Code from a **new** terminal tab. Off by default — see
+[Open in iTerm2's built-in browser](#open-in-iterm2s-built-in-browser).
+
 ### Claude Code plugin (skills + MCP)
     /plugin marketplace add grburgess/mindgap
     /plugin install mindgap
@@ -177,7 +182,7 @@ The UI is vanilla JS with no build step, drawing `force-graph`/`3d-force-graph`,
 
 ### Open in iTerm2's built-in browser
 
-Keep the UI and live views out of your normal browser: with iTerm2 ≥ 3.6 and its Browser Plugin installed, set
+**Off by default** — without the variable, `serve` opens your system browser and `run start` just prints the URL. To keep the UI and live views out of your normal browser instead: with iTerm2 ≥ 3.6 and its Browser Plugin installed, set
 
 ```bash
 export MINDGAP_BROWSER=iterm   # e.g. in ~/.zshrc
@@ -186,7 +191,7 @@ export MINDGAP_BROWSER=iterm   # e.g. in ~/.zshrc
 - `mindgap serve` opens the UI in a **new iTerm2 browser window** (instead of the system browser).
 - `mindgap run start` (what the live-view skills call) opens the run page in a **split pane beside the Claude Code session** that started it, then hands focus back to your prompt. The split is vertical (side by side); `MINDGAP_ITERM_SPLIT=horizontal` stacks it below instead. Outside iTerm2 (no `$ITERM_SESSION_ID`) it falls back to a new iTerm2 window.
 
-It works by writing a dynamic profile (`~/Library/Application Support/iTerm2/DynamicProfiles/mindgap.json`, Profile Type = Web Browser) and opening it via AppleScript; the first run may ask to let your terminal control iTerm2. iTerm2's browser keeps its own cookies/history, apart from Safari/Chrome. Unset the variable for the old behaviour.
+It works by writing a dynamic profile (`~/Library/Application Support/iTerm2/DynamicProfiles/mindgap.json`, Profile Type = Web Browser) and opening it via AppleScript; the first run may ask to let your terminal control iTerm2. iTerm2's browser keeps its own cookies/history, apart from Safari/Chrome.
 
 ## A tour of the UI
 
