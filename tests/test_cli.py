@@ -14,6 +14,7 @@ class CliTest(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.db = os.path.join(self.tmpdir.name, "test.db")
         self.env = dict(os.environ, MINDGAP_DB=self.db, PYTHONPATH=REPO)
+        self.env.pop("MINDGAP_BROWSER", None)  # never pop iTerm2 panes from tests
 
     def tearDown(self):
         self.tmpdir.cleanup()

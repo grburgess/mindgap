@@ -591,7 +591,11 @@ def cmd_run(args):
     try:
         if args.run_cmd == "start":
             rid = runs.start(args.skill, args.title, run_id=args.id)
-            print(f"{rid}\nlive view: http://localhost:{args.port}/runs/{rid}")
+            url = f"http://localhost:{args.port}/runs/{rid}"
+            print(f"{rid}\nlive view: {url}")
+            from . import iterm
+            if iterm.enabled():
+                iterm.open_url(url, split=True)
         elif args.run_cmd == "emit":
             raw = sys.stdin.read() if args.data == "-" else (args.data or "{}")
             evt = runs.emit(args.run_id, args.kind, json.loads(raw), actor=args.actor,

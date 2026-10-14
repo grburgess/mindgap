@@ -175,6 +175,19 @@ mindgap serve [--port 8765] [--no-open]
 
 The UI is vanilla JS with no build step, drawing `force-graph`/`3d-force-graph`, `d3`, `marked`, and `dompurify` from CDNs. Community detection and hull geometry live in `web/cluster.js`; the 3D topic glow (nebula orbs + orb-hover labels) and the twinkling parallax star field live in `web/glow3d.js` and `web/starfield.js`, which build sprites/points in the live Three.js scene using a version-pinned `three` ESM import (`esm.sh/three@0.179`) exposed as a global.
 
+### Open in iTerm2's built-in browser
+
+Keep the UI and live views out of your normal browser: with iTerm2 ≥ 3.6 and its Browser Plugin installed, set
+
+```bash
+export MINDGAP_BROWSER=iterm   # e.g. in ~/.zshrc
+```
+
+- `mindgap serve` opens the UI in a **new iTerm2 browser window** (instead of the system browser).
+- `mindgap run start` (what the live-view skills call) opens the run page in a **split pane beside the Claude Code session** that started it, then hands focus back to your prompt. The split is vertical (side by side); `MINDGAP_ITERM_SPLIT=horizontal` stacks it below instead. Outside iTerm2 (no `$ITERM_SESSION_ID`) it falls back to a new iTerm2 window.
+
+It works by writing a dynamic profile (`~/Library/Application Support/iTerm2/DynamicProfiles/mindgap.json`, Profile Type = Web Browser) and opening it via AppleScript; the first run may ask to let your terminal control iTerm2. iTerm2's browser keeps its own cookies/history, apart from Safari/Chrome. Unset the variable for the old behaviour.
+
 ## A tour of the UI
 
 **Topic clusters (2D).** Color nodes by community, then flip on **Topic repulsion** — a cohesion force pulls each topic into its own region.

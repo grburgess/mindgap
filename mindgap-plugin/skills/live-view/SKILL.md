@@ -34,6 +34,8 @@ curl -sf localhost:8765/api/runs >/dev/null || echo "need server"
   don't kill it; serve on `--port 8777` and use that port in the URL.
 - `mindgap run start --skill <skill> --title "<what is being decided>" [--port N]`
   → prints the run id + URL. **Give the user the URL in your next message.**
+  With `MINDGAP_BROWSER=iterm` it also opens the page in an iTerm2 split pane beside
+  this session — still give the URL.
 - Arm the back-channel: **Bash with `run_in_background: true`** running
   `mindgap run inbox <run-id> --once`. It blocks silently until the page posts, prints
   that burst (one JSON message per line) and exits — you are notified exactly then, never
