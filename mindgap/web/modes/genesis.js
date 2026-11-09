@@ -597,7 +597,9 @@
     hudEl.speed.onclick = () => { st.speed = SPEEDS[(SPEEDS.indexOf(st.speed) + 1) % SPEEDS.length]; paintHud(); };
     hudEl.loop.onclick = () => {
       st.loop = !st.loop;
-      if (st.loop && st.done) { st.playing = true; holdUntil = performance.now() + HOLD_MS; start(); }
+      // loop switched on after the replay ended: start the next pass now (the HOLD_MS pause is only
+      // between automatic passes) so the click visibly does something
+      if (st.loop && st.done) { st.playing = true; restart(performance.now()); lastFit = 0; start(); }
       paintHud();
     };
     document.body.appendChild(hud);
@@ -607,9 +609,15 @@
     if (!hud || !st) return;
     hudEl.play.textContent = st.playing ? '⏸' : '▶';
     hudEl.speed.textContent = st.speed + '×';
-    hudEl.loop.textContent = 'loop';
-    hudEl.loop.style.color = st.loop ? 'var(--accent-ink,var(--green))' : 'var(--dim)';
-    hudEl.date.textContent = fmt(st.t) + (st.done ? ' · now' : '');
+    // loop reads as a real toggle: filled pill + icon when on (a text-colour change alone was invisible)
+    const on = !!st.loop, L = hudEl.loop;
+    L.textContent = on ? '↻ loop on' : '↻ loop';
+    L.setAttribute('aria-pressed', on ? 'true' : 'false');
+    L.style.background = on ? 'var(--green)' : 'transparent';
+    L.style.borderColor = on ? 'var(--green)' : 'var(--line)';
+    L.style.color = on ? 'var(--bg)' : 'var(--dim)';
+    L.style.fontWeight = on ? '600' : '';
+    hudEl.date.textContent = fmt(st.t) + (st.done ? (on && st.playing ? ' · looping…' : ' · now') : '');
     hudEl.count.textContent = nb + ' / ' + order.length + ' nodes';
     hudEl.bar.style.width = (100 * (st.t - st.lo) / span()).toFixed(1) + '%';
   }
