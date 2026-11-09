@@ -129,8 +129,8 @@
     const pgeo = new T.BufferGeometry();
     pgeo.setAttribute('position', new T.BufferAttribute(new Float32Array(pcount * 3), 3));
     if (capL > links.length) pgeo.setDrawRange(0, links.length);
-    const pmat = new T.PointsMaterial({ color: fx && fx.photon ? parseColor(fx.photon) : 0x57c7a4, size: 2.4, sizeAttenuation: true,
-      transparent: true, opacity: 0.9, blending: T.AdditiveBlending, depthWrite: false });
+    const pmat = new T.PointsMaterial({ color: fx && fx.photon ? parseColor(fx.photon) : 0x57c7a4, size: 3.6, sizeAttenuation: true,
+      map: softDot(), transparent: true, opacity: 0.9, blending: T.AdditiveBlending, depthWrite: false });
     photons = new T.Points(pgeo, pmat);
     photons.frustumCulled = false;
     graph.scene().add(photons);
@@ -472,6 +472,18 @@
   // the light version for ordinary MCP touches — swell + whiten, no dimming. Per-frame cost is
   // O(fired + beads) and zero while nothing is firing. Hue-keeping dim needs ~0.93 toward bg, not 0.7:
   // the Lambert ambient lifts dimmed colours back up. Halos need depthTest:false or spheres hide them.
+  // soft round glow sprite for Points (WebGL draws untextured points as hard squares); cached
+  let _softDot = null;
+  function softDot() {
+    if (_softDot) return _softDot;
+    const T = THREE(), c = document.createElement('canvas'); c.width = c.height = 64;
+    const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.22, 'rgba(255,255,255,.85)');
+    g.addColorStop(0.5, 'rgba(255,255,255,.28)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+    _softDot = new T.CanvasTexture(c); return _softDot;
+  }
+
   const F = { HOP_MS: 170, STAGGER_MS: 110, PULSE_MS: 480, FLASH_MS: 900, BEADS: 16, PULSES: 2400, HALOS: 64, DIM: 0.93, BURST: 8 };
   const fired = new Map();                  // node id -> fire time (ms): the recalled set
   const flashes = new Map();                // node id -> t0: light flashes (no dimming), dropped when done
@@ -479,6 +491,7 @@
   const litLinks = new Set();               // link OBJECTS on a firing path (survive rebuilds)
   let pulses = [];                          // {a, b, t0}: node objects + start time
   let pulsePts = null, haloPts = null, idNode = null, idIx = null, _white = null, _bg = null;
+  let beadTint = null;   // recall bead colour (theme photon, lifted toward white)
 
   function colorOf(n) {
     const css = ctx.nodeColorFor(n), c = parseColor(css);
@@ -498,8 +511,11 @@
     idIx = new Map(ctx.nodes().map((n, i) => [n.id, i]));   // instance index; fixed until the next rebuild
     const pg = new T.BufferGeometry();
     pg.setAttribute('position', new T.BufferAttribute(new Float32Array(F.PULSES * 3), 3));
+    pg.setAttribute('color', new T.BufferAttribute(new Float32Array(F.PULSES * 3), 3));
     pg.setDrawRange(0, 0);
-    pulsePts = new T.Points(pg, new T.PointsMaterial({ color: 0xc8fff0, size: 9, sizeAttenuation: true,
+    const fxp = ctx.fx ? ctx.fx() : null;
+    beadTint = new T.Color(fxp && fxp.photon ? parseColor(fxp.photon) : 0xc8fff0).lerp(new T.Color(0xffffff), 0.35);
+    pulsePts = new T.Points(pg, new T.PointsMaterial({ size: 18, sizeAttenuation: true, map: softDot(), vertexColors: true,
       transparent: true, opacity: 0.95, blending: T.AdditiveBlending, depthWrite: false }));
     pulsePts.frustumCulled = false;
     graph.scene().add(pulsePts);
@@ -592,13 +608,15 @@
       return;
     }
     // pulses in flight, then the lit paths' bead chains
-    const pp = pulsePts.geometry.attributes.position.array;
+    const pp = pulsePts.geometry.attributes.position.array, pc = pulsePts.geometry.attributes.color.array;
+    const tr = beadTint.r, tg = beadTint.g, tb = beadTint.b;
+    const lum = (i, k) => { pc[i * 3] = tr * k; pc[i * 3 + 1] = tg * k; pc[i * 3 + 2] = tb * k; };
     let w = 0;
     for (const p of pulses) {
       const u = (now - p.t0) / F.PULSE_MS;
       if (u < 0 || u > 1 || !hasPos(p.a) || !hasPos(p.b)) continue;
       pp[w * 3] = p.a.x + (p.b.x - p.a.x) * u; pp[w * 3 + 1] = p.a.y + (p.b.y - p.a.y) * u;
-      pp[w * 3 + 2] = (p.a.z || 0) + ((p.b.z || 0) - (p.a.z || 0)) * u; w++;
+      pp[w * 3 + 2] = (p.a.z || 0) + ((p.b.z || 0) - (p.a.z || 0)) * u; lum(w, 1); w++;
     }
     for (const l of litLinks) {
       const s = l.source, t = l.target;
@@ -607,10 +625,12 @@
         const u = ((now / 900) + k / F.BEADS) % 1;
         pp[w * 3] = s.x + (t.x - s.x) * u; pp[w * 3 + 1] = s.y + (t.y - s.y) * u;
         pp[w * 3 + 2] = (s.z || 0) + ((t.z || 0) - (s.z || 0)) * u;
+        lum(w, 0.35 + 0.65 * Math.sin(Math.PI * u));
       }
     }
     pulsePts.geometry.setDrawRange(0, w);
     pulsePts.geometry.attributes.position.needsUpdate = true;
+    pulsePts.geometry.attributes.color.needsUpdate = true;
     while (pulses.length && now - pulses[0].t0 > F.PULSE_MS + 4000) pulses.shift();
     // swell + whiten: fired nodes settle at 1.45×, light flashes return to 1×. Matrices are rewritten
     // only while a flash runs or the dirty loop just reset every scale to base.
