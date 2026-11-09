@@ -580,7 +580,7 @@
     const btn = 'background:transparent;border:1px solid var(--line);color:inherit;font:inherit;padding:2px 8px;border-radius:5px;cursor:pointer';
     hud.innerHTML = `<b style="color:var(--accent-ink,var(--green));letter-spacing:.08em">GENESIS</b>
       <button data-g="play" style="${btn}" title="play / pause the replay"></button>
-      <button data-g="restart" style="${btn}" title="restart from the first node">⟲</button>
+      <button data-g="restart" style="${btn}" title="restart from the first node" aria-label="restart from the first node">⏮</button>
       <button data-g="speed" style="${btn}" title="replay speed"></button>
       <button data-g="loop" style="${btn}" title="loop at now"></button>
       <span data-g="date" style="min-width:86px;text-align:center"></span>
