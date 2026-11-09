@@ -10,7 +10,7 @@
   const SPEED = (2 * Math.PI) / 40;   // rad/sec → ~40s per turn
   const IDLE_MS = 3000;
 
-  function on() { return !!(ctx && ctx.getSettings().autoRotate); }
+  function on() { const s = ctx && ctx.getSettings(); return !!(s && s.autoRotate && !s.autoTour); }   // autoTour (motion.js) owns the camera while on
 
   function step(dtPrev) {
     if (!graph) { raf = 0; return; }

@@ -12,12 +12,19 @@
 
    ctx (from app.js): { nodes(), links(), nodeColorFor(n), linkColorFor(l), nodeVal(n), hubIds()→Set,
    onHover(node|null), onClick(node), nodeLabel(n)→tooltip HTML, getSettings()→state.settings,
-   bg()→theme background css (recall-firing dims toward it) }.
+   bg()→theme background css (recall-firing dims toward it), fx()→{photon, arrow, additive, hub, hubK}|null
+   (neon-theme edge FX, read at build — app.js rebuilds on theme change), allowDrag()→false blocks
+   node drag (fixed-layout view modes, modes/modes.js), graphFx()→false hides photons/arrows/hub glow,
+   nodeScale()→node sphere size multiplier, hideNodes()→true hides the node mesh, hub spheres, edges,
+   photons and arrows (a view mode draws its own; the hidden mesh still raycasts for hover/click/drag —
+   three's Raycaster ignores .visible) }.
    THREE from window.THREE (ESM shim in index.html). 3D-only. */
 'use strict';
 (function () {
   let graph = null, ctx = null, warned = false;
   let inst = null, lines = null;          // the one node mesh + the one edge geometry
+  let rawCol = false;                      // fx.flat: node colours shown as authored (see colorOf)
+  let hubK = 1;                            // fx.hubK: hub bloom-sphere size multiplier (filament: tiny nodes, readable hubs)
   let hubMeshes = [];                      // small per-hub bloom spheres (≤~28), synced in the loop
   let hubMap = [];                         // parallel: hubMeshes[i] tracks node hubMap[i]
   let raf = 0, frame = 0;
@@ -33,12 +40,21 @@
   let ctrls = null, down = null, dragging = false, justDragged = false, dragNbrs = null, dragPrev = null, liveGesture = false, dragReheatT = 0, dragDecay = 0.0228;
   let dragPlane = null, _v3a = null, _v3b = null;
   const HUB_R = 1;                          // bloom-sphere base radius; scaled per-node in the loop
+  // view-mode override (setMod): { radius(n)→sphere radius, tintLinks(colorAttr, links, from),
+  // capacity()→{nodes, links} } — genesis sizes nodes by LIVE degree and age-fades edges. tintLinks runs
+  // inside writeLineColors (rebuild / syncColors / grow) on the freshly written base RGBA (2 verts × 4
+  // floats per link, indexed like links; only links >= from got a new base). capacity pre-allocates
+  // every buffer for the mode's full set so growth (grow()) never rebuilds.
+  let mod = null;
+  // what build()/grow() last wrote: data arrays + their used lengths, and the allocated capacity
+  let kN = null, kL = null, nN = 0, nL = 0, capN = 0, capL = 0, hubGeo = null;
 
   function THREE() { return window.THREE || null; }
 
   // node sphere radius from nodeVal (a volume-ish degree number): cbrt so hubs read bigger without
   // dwarfing the field. tuned to roughly match the lib's default val→radius feel.
-  function radiusOf(n) { return Math.cbrt(Math.max(ctx.nodeVal(n), 0.01)) * 4; }
+  let nodeK = 1;                            // view-mode node-size multiplier (ctx.nodeScale), read per build/loop
+  function radiusOf(n) { return (mod && mod.radius ? mod.radius(n) : Math.cbrt(Math.max(ctx.nodeVal(n), 0.01)) * 4) * nodeK; }
 
   // THREE.Color rejects rgba() (the alpha); strip to the rgb triple. hex/named pass straight through.
   const _col = { r: 0, g: 0, b: 0 };
@@ -58,13 +74,22 @@
     const T = THREE(); if (!T || !graph) return;
     clear();
     const nodes = ctx.nodes(), links = ctx.links();
+    nodeK = ctx.nodeScale ? ctx.nodeScale() : 1;
+    const cap = mod && mod.capacity ? mod.capacity() : null;
+    capN = Math.max(nodes.length, cap ? cap.nodes : 0); capL = Math.max(links.length, cap ? cap.links : 0);
+    kN = nodes; kL = links; nN = nodes.length; nL = links.length;
 
     // A. NODES → one InstancedMesh. Lambert (scene has Ambient+Directional). Per-instance color via
     // setColorAt — three's USE_INSTANCING_COLOR path applies instanceColor automatically. Do NOT set
     // vertexColors:true: that makes the shader read a (missing) geometry color attribute → all black.
+    const fx = ctx.fx ? ctx.fx() : null;     // neon themes: photon/arrow colours + additive edges; null = stock
     const geo = new T.SphereGeometry(1, 8, 6);
-    const mat = new T.MeshLambertMaterial({});
-    inst = new T.InstancedMesh(geo, mat, nodes.length || 1);
+    // fx.flat (galaxy): unlit dots — the type colour renders as-is (Lambert shading darkens pastels to muddy primaries)
+    const mat = fx && fx.flat ? new T.MeshBasicMaterial({}) : new T.MeshLambertMaterial({});
+    rawCol = !!(fx && fx.flat);
+    hubK = (fx && fx.hubK) || 1;
+    inst = new T.InstancedMesh(geo, mat, capN || 1);
+    if (capN > nodes.length) inst.count = nodes.length;   // reserved tail drawn once grow() fills it
     inst.frustumCulled = false;             // we manage the bounding sphere on the shared geometry
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i];
@@ -82,13 +107,15 @@
     // works — three enables USE_COLOR_ALPHA for 4-component vertex colors, letting linkColorFor's
     // rgba() (which bakes in state.settings.linkOpacity + the highlight alphas) drive edge opacity.
     const lgeo = new T.BufferGeometry();
-    const lpos = new Float32Array(links.length * 2 * 3);
-    const lcol = new Float32Array(links.length * 2 * 4);
+    const lpos = new Float32Array(capL * 2 * 3);
+    const lcol = new Float32Array(capL * 2 * 4);
     lgeo.setAttribute('position', new T.BufferAttribute(lpos, 3));
     lgeo.setAttribute('color', new T.BufferAttribute(lcol, 4));
     const lmat = new T.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
+    if (fx && fx.additive) lmat.blending = T.AdditiveBlending;   // luminous filaments (galaxy)
     lines = new T.LineSegments(lgeo, lmat);
     lines.frustumCulled = false;
+    if (capL > links.length) lgeo.setDrawRange(0, links.length * 2);
     graph.scene().add(lines);
     writeLinePositions();
     writeLineColors();
@@ -96,12 +123,13 @@
     // C2. EDGE-FLOW PHOTONS → one THREE.Points, one flowing point per edge (10k points = 1 draw call).
     // Restores the "energy along links" FX that linkVisibility(false) removed, at ~0 cost. Additive
     // green; positions = lerp(src,tgt,phase) advanced each frame in the loop.
-    const pcount = links.length;
+    const pcount = capL;
     photonPhase = new Float32Array(pcount);
     for (let i = 0; i < pcount; i++) photonPhase[i] = (i * 0.147) % 1;   // spread starts, no RNG needed
     const pgeo = new T.BufferGeometry();
     pgeo.setAttribute('position', new T.BufferAttribute(new Float32Array(pcount * 3), 3));
-    const pmat = new T.PointsMaterial({ color: 0x57c7a4, size: 2.4, sizeAttenuation: true,
+    if (capL > links.length) pgeo.setDrawRange(0, links.length);
+    const pmat = new T.PointsMaterial({ color: fx && fx.photon ? parseColor(fx.photon) : 0x57c7a4, size: 2.4, sizeAttenuation: true,
       transparent: true, opacity: 0.9, blending: T.AdditiveBlending, depthWrite: false });
     photons = new T.Points(pgeo, pmat);
     photons.frustumCulled = false;
@@ -111,8 +139,9 @@
     // The lib's linkDirectionalArrowLength is dead under linkVisibility(false); we reimplement it. Fixed
     // grey (no per-instance color) keeps it simple; cone apex points +Y by default, oriented in loop().
     arrows = new T.InstancedMesh(new T.ConeGeometry(1.6, 4.5, 6),
-      new T.MeshBasicMaterial({ vertexColors: false, color: 0x8ca098, transparent: true, opacity: 0.85 }),
-      links.length || 1);
+      new T.MeshBasicMaterial({ vertexColors: false, color: fx && fx.arrow ? parseColor(fx.arrow) : 0x8ca098, transparent: true, opacity: 0.85 }),
+      capL || 1);
+    if (capL > links.length) arrows.count = links.length;
     arrows.userData.arrows = true; arrows.frustumCulled = false;
     graph.scene().add(arrows);
 
@@ -120,22 +149,38 @@
     // mesh stays untagged). Positions synced in the loop; colors are static (hub hue on build).
     buildHubs();
     buildFiring();
+    applyModeVis();
+  }
+
+  function modeHides() { return !!(ctx && ctx.hideNodes && ctx.hideNodes()); }
+  // view mode took over node/edge drawing (or gave it back): toggle our objects; picking keeps working
+  function applyModeVis() {
+    const h = modeHides();
+    if (inst) inst.visible = !h;
+    if (lines) lines.visible = !h;
+    if (photons) photons.visible = !h;
+    if (arrows && h) arrows.visible = false;
+    applyHubVis();
   }
 
   function buildHubs() {
-    const T = THREE();
-    hubMeshes = []; hubMap = [];
+    hubMeshes = []; hubMap = []; hubGeo = null;
     const set = ctx.hubIds() || new Set();
     if (!set.size) return;
-    const hgeo = new T.SphereGeometry(1, 8, 6);   // shared geometry across hub spheres
-    for (const n of ctx.nodes()) {
-      if (!set.has(n.id)) continue;
-      const m = new T.Mesh(hgeo, new T.MeshBasicMaterial({ color: parseColor(ctx.nodeColorFor(n)) }));
-      m.userData.bloom = true;                     // bloom.js: only tagged objects glow
-      m.frustumCulled = false; m.visible = hasPos(n);
-      graph.scene().add(m);
-      hubMeshes.push(m); hubMap.push(n);
-    }
+    for (const n of ctx.nodes()) if (set.has(n.id)) addHub(n);
+  }
+  function addHub(n) {
+    const T = THREE();
+    if (!hubGeo) hubGeo = new T.SphereGeometry(1, 8, 6);   // shared geometry across hub spheres
+    const fx = ctx.fx ? ctx.fx() : null, hubTint = fx && fx.hub ? parseColor(fx.hub) : null;   // neon: hubs toward a hot white
+    const c = parseColor(ctx.nodeColorFor(n));
+    if (hubTint) c.lerp(hubTint, 0.6);
+    if (fx && fx.hubSat) { const h = c.getHSL({}); c.setHSL(h.h, 1, 0.55); }   // galaxy: hub glows in its own hue, not pastel-white
+    const m = new T.Mesh(hubGeo, new T.MeshBasicMaterial({ color: c }));
+    m.userData.bloom = true;                     // bloom.js: only tagged objects glow
+    m.frustumCulled = false; m.visible = hasPos(n);
+    graph.scene().add(m);
+    hubMeshes.push(m); hubMap.push(n);
   }
 
   // rewrite every line endpoint from current node positions. src/tgt are node OBJECTS post-bind;
@@ -150,12 +195,17 @@
         p[o + 3] = t.x; p[o + 4] = t.y; p[o + 5] = t.z || 0;
       } else { p[o] = p[o + 1] = p[o + 2] = p[o + 3] = p[o + 4] = p[o + 5] = 0; }
     }
-    lines.geometry.attributes.position.needsUpdate = true;
+    upload(lines.geometry.attributes.position, links.length * 6);
   }
-  function writeLineColors() {
+  // capacity-sized buffers (mod.capacity): upload only the used head [0, floats)
+  function upload(attr, floats) {
+    if (attr.addUpdateRange && floats > 0 && floats < attr.array.length) { attr.clearUpdateRanges(); attr.addUpdateRange(0, floats); }
+    attr.needsUpdate = true;
+  }
+  function writeLineColors(from = 0) {
     if (!lines) return;
     const links = ctx.links(), c = lines.geometry.attributes.color.array;
-    for (let i = 0; i < links.length; i++) {
+    for (let i = from; i < links.length; i++) {
       const css = String(ctx.linkColorFor(links[i]));            // rgba() with per-edge alpha (opacity/highlight)
       const col = parseColor(css);
       let a = 1; if (css.indexOf('rgba') === 0) { const m = css.match(/[\d.]+/g); if (m && m.length >= 4) a = +m[3]; }
@@ -163,6 +213,7 @@
       const o = i * 8;                                            // 2 verts × RGBA(4)
       c[o] = c[o + 4] = col.r; c[o + 1] = c[o + 5] = col.g; c[o + 2] = c[o + 6] = col.b; c[o + 3] = c[o + 7] = a;
     }
+    if (mod && mod.tintLinks) mod.tintLinks(lines.geometry.attributes.color, links, from);
     lines.geometry.attributes.color.needsUpdate = true;
   }
 
@@ -170,7 +221,8 @@
     const rm = (o) => { if (graph && o) { graph.scene().remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); } };
     rm(inst); rm(lines); rm(photons); rm(arrows); rm(pulsePts); rm(haloPts);
     for (const m of hubMeshes) rm(m);
-    inst = null; lines = null; photons = null; photonPhase = null; arrows = null; hubMeshes = []; hubMap = [];
+    inst = null; lines = null; photons = null; photonPhase = null; arrows = null; hubMeshes = []; hubMap = []; hubGeo = null;
+    kN = kL = null; nN = nL = 0;
     pulsePts = null; haloPts = null;
   }
 
@@ -197,6 +249,7 @@
     const posSum = posChecksum(nodes);
     const dirty = !(posSum === lastPosSum);   // NaN sum (pre-layout) stays dirty every frame
     lastPosSum = posSum;
+    if (dirty) nodeK = ctx.nodeScale ? ctx.nodeScale() : 1;   // mode switches always move nodes → dirty
     if (dirty) {
       needSphere = true;
       for (let i = 0; i < nodes.length; i++) {
@@ -205,10 +258,12 @@
         else { dummy.scale.setScalar(0); }
         dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix);
       }
-      inst.instanceMatrix.needsUpdate = true;
+      upload(inst.instanceMatrix, nodes.length * 16);
       writeLinePositions();
     }
-    if (photons) {                          // advance + reposition edge-flow points along their edges
+    const gfx = (!ctx.graphFx || ctx.graphFx()) && !modeHides();   // view modes (modes/modes.js) may hide photons/arrows/hub glow
+    if (photons) photons.visible = gfx;
+    if (photons && gfx) {                   // advance + reposition edge-flow points along their edges
       const links = ctx.links(), pp = photons.geometry.attributes.position.array;
       for (let i = 0; i < links.length; i++) {
         const l = links[i], s = l.source, t = l.target, o = i * 3;
@@ -219,10 +274,10 @@
           pp[o + 2] = (s.z || 0) + ((t.z || 0) - (s.z || 0)) * ph;
         } else { pp[o] = pp[o + 1] = pp[o + 2] = 0; }
       }
-      photons.geometry.attributes.position.needsUpdate = true;
+      upload(photons.geometry.attributes.position, links.length * 3);
     }
     if (arrows) {                           // orient + place a cone at the target end of each bound link
-      arrows.visible = !!(ctx.getSettings && ctx.getSettings().arrows);
+      arrows.visible = gfx && !!(ctx.getSettings && ctx.getSettings().arrows);
       if (!arrows.visible && dirty) arrowsStale = true;  // moved while hidden → recompute on next show
       if (arrows.visible && (dirty || arrowsStale)) {
         arrowsStale = false;
@@ -239,13 +294,13 @@
           } else { dummy.position.set(0, 0, 0); dummy.quaternion.copy(_q); dummy.scale.setScalar(0); }
           dummy.updateMatrix(); arrows.setMatrixAt(i, dummy.matrix);
         }
-        arrows.instanceMatrix.needsUpdate = true;
+        upload(arrows.instanceMatrix, links.length * 16);
       }
     }
     if (dirty) {
       for (let i = 0; i < hubMeshes.length; i++) {
         const n = hubMap[i], m = hubMeshes[i];
-        if (hasPos(n)) { m.visible = hubVisible(n); m.position.set(n.x, n.y, n.z || 0); m.scale.setScalar(radiusOf(n) * (HUB_R * 1.05)); }
+        if (hasPos(n)) { m.visible = hubVisible(n); m.position.set(n.x, n.y, n.z || 0); m.scale.setScalar(radiusOf(n) * (HUB_R * 1.05) * hubK); }
         else m.visible = false;
       }
     }
@@ -325,6 +380,7 @@
     if (down) return;                                              // second pointer mid-gesture must not steal down.node (drop would unpin the wrong node)
     if (ev.shiftKey) return;                                       // Shift+press falls through to orbit-controls, even over a node
     if (ev.button != null && ev.button !== 0) return;              // left button only
+    if (ctx.allowDrag && !ctx.allowDrag()) return;                 // fixed-layout view mode: no drag (click still selects)
     const n = nodeAt(ev);
     if (!n) return;                                                // empty space → let orbit-controls handle it
     down = { node: n, x: ev.clientX, y: ev.clientY };
@@ -425,11 +481,15 @@
   let pulsePts = null, haloPts = null, idNode = null, idIx = null, _white = null, _bg = null;
 
   function colorOf(n) {
-    const c = parseColor(ctx.nodeColorFor(n));
+    const css = ctx.nodeColorFor(n), c = parseColor(css);
+    // rawCol: Color('#hex') is decoded sRGB→linear but the composer writes the frame without re-encoding, so
+    // pastels land darker + oversaturated; undo the decode so the dot shows the authored hex (galaxy only).
+    // rgb()/rgba() strings (highlight dim) are parsed raw already — leave them.
+    if (rawCol && String(css).indexOf('rgb') !== 0) c.convertLinearToSRGB();
     if (fired.size && !fired.has(n.id)) c.lerp(_bg || (_bg = parseColor(ctx.bg ? ctx.bg() : '#000')), F.DIM);
     return c;
   }
-  function hubVisible(n) { return hasPos(n) && (!fired.size || fired.has(n.id)); }   // a glowing hub would punch through the dim
+  function hubVisible(n) { return hasPos(n) && !modeHides() && (!fired.size || fired.has(n.id)) && (!ctx.graphFx || ctx.graphFx()); }   // a glowing hub would punch through the dim
   function applyHubVis() { for (let i = 0; i < hubMeshes.length; i++) hubMeshes[i].visible = hubVisible(hubMap[i]); }
 
   function buildFiring() {
@@ -610,6 +670,7 @@
     if (tip) { tip.remove(); tip = null; }                   // drop the hover tooltip div
     if (ctrls) { ctrls.enabled = true; ctrls = null; }       // never leave orbit disabled
     fired.clear(); flashes.clear(); settled.clear(); litLinks.clear(); pulses = []; idNode = null; idIx = null; _bg = null;
+    mod = null;
     graph = null; ctx = null; raycaster = null; ndc = null; dummy = null;
     _up = null; _dir = null; _q = null;
   }
@@ -618,9 +679,54 @@
   // build time; without a rebuild, filtered-out nodes linger as ghosts and colors/hover desync.
   // build() clears the old meshes first; the running rAF loop is synchronous-safe and picks up the new refs.
   function rebuild() { if (graph && ctx) { build(); markDirty(); arrowsStale = true; } }
+  // growth (genesis arrivals): the new data = the built data + a tail, within the capacity reserved via
+  // mod.capacity → write only the tail and advance the counts / draw ranges. No new geometry or
+  // materials: a rebuild disposes them, so three releases + recompiles the shader programs (~10 ms a
+  // batch) and re-uploads every buffer. Anything else (shrink, reorder, over capacity) → rebuild().
+  function grow() {
+    if (!graph || !ctx) return;
+    const nodes = ctx.nodes(), links = ctx.links();
+    let ok = !!(inst && kN) && nodes.length >= nN && links.length >= nL && nodes.length <= capN && links.length <= capL;
+    for (let i = 0; ok && i < nN; i++) ok = nodes[i] === kN[i];
+    for (let i = 0; ok && i < nL; i++) ok = links[i] === kL[i];
+    if (!ok) { rebuild(); return; }
+    const hubs = ctx.hubIds() || new Set(), from = nL;
+    for (let i = nN; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (hasPos(n)) { dummy.position.set(n.x, n.y, n.z || 0); dummy.scale.setScalar(radiusOf(n)); }
+      else { dummy.position.set(0, 0, 0); dummy.scale.setScalar(0); }
+      dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix);
+      inst.setColorAt(i, colorOf(n));
+      if (idNode) { idNode.set(n.id, n); idIx.set(n.id, i); }
+      if (hubs.has(n.id)) addHub(n);
+    }
+    inst.count = nodes.length;
+    upload(inst.instanceMatrix, nodes.length * 16);
+    if (inst.instanceColor) upload(inst.instanceColor, nodes.length * 3);
+    kN = nodes; kL = links; nN = nodes.length; nL = links.length;
+    lines.geometry.setDrawRange(0, nL * 2);
+    if (photons) photons.geometry.setDrawRange(0, nL);
+    if (arrows) arrows.count = nL;
+    writeLinePositions();
+    writeLineColors(from);                    // base colour for the new tail; mod.tintLinks re-tints all
+    markDirty(); arrowsStale = true;
+  }
   // theme change: the dim target moved
   function refreshBg() { _bg = null; if (fired.size) syncColors(); }
 
-  window.Instanced3d = { install, teardown, syncColors, rebuild, fire, flash, clearFiring, refreshBg,
-    firing: () => fired.size > 0 };
+  // view-mode override (null clears); takes effect on the next rebuild / syncColors
+  function setMod(m) { mod = m || null; markDirty(); }
+
+  // verifier hook: the colour actually written into node `id`'s instance (hex), or null
+  function instanceColorOf(id) {
+    if (!inst || !inst.instanceColor || !ctx) return null;
+    const i = ctx.nodes().findIndex((n) => n.id === id);
+    if (i < 0) return null;
+    const c = new (THREE().Color)(); inst.getColorAt(i, c); return '#' + c.getHexString();
+  }
+
+  window.Instanced3d = { install, teardown, syncColors, rebuild, grow, fire, flash, clearFiring, refreshBg, applyModeVis, setMod, instanceColorOf,
+    firing: () => fired.size > 0,
+    nodeColors: () => (inst ? inst.instanceColor : null),   // live per-node colours (hover/firing), ctx.nodes() order
+    debug: () => ({ inst, lines, photons, arrows, hubMeshes }) };   // read-only handles for verifiers
 })();

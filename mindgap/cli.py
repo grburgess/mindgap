@@ -69,7 +69,8 @@ def cmd_find(args):
         print(json.dumps(rows, indent=2))
     else:
         for r in rows:
-            print(f"{r['id']}\t{r['title']} [{r['type']}]")
+            sup = f"\t[superseded by {', '.join(r['superseded_by'])}]" if r["superseded_by"] else ""
+            print(f"{r['id']}\t{r['title']} [{r['type']}]{sup}")
 
 
 def _node_or_die(conn, node_id):
@@ -164,6 +165,13 @@ def cmd_export(args):
     print(out)
 
 
+def cmd_sync(args):
+    from . import vault
+    conn = db.connect()
+    rep = vault.sync(conn, Path(args.vault).expanduser())
+    print(vault.format_report(rep))
+
+
 def cmd_stats(args):
     conn = db.connect()
     print(json.dumps(db.stats(conn), indent=2))
@@ -217,6 +225,30 @@ def cmd_mine(args):
         else:
             out = mine.connect_candidates(conn, k=args.k)
         print(json.dumps(out, indent=2))
+
+
+def cmd_supersede(args):
+    from . import supersede
+    conn = db.connect()
+    try:
+        if args.sup_cmd == "candidates":
+            out = supersede.candidates(conn, all_=args.all)
+            if args.json:
+                print(json.dumps(out, indent=2)); return
+            for c in out:
+                print(f"{c['newer']} > {c['older']}\t{', '.join(c['reasons'])}")
+            print(f"# {len(out)} candidate pairs")
+        elif args.sup_cmd == "judge":
+            print(json.dumps(supersede.judge(conn, run_id=args.run_id, all_=args.all)))
+        elif args.sup_cmd == "write":
+            pairs = json.loads(args.pairs)
+            if not isinstance(pairs, list):
+                raise ValueError("--pairs must be a JSON list")
+            print(json.dumps(supersede.write(conn, args.run_id, pairs), indent=2))
+        elif args.sup_cmd == "revert":
+            print(json.dumps(supersede.revert(conn, args.run_id)))
+    except ValueError as e:  # JSONDecodeError is a ValueError
+        sys.exit(f"mindgap supersede: {e}")
 
 
 def cmd_serve(args):
@@ -676,6 +708,10 @@ def main(argv=None):
     p.add_argument("--out")
     p.set_defaults(func=cmd_export)
 
+    p = sub.add_parser("sync", help="two-way sync with an Obsidian vault (backs up the DB first)")
+    p.add_argument("--vault", default="~/mindgap_vault", help="vault dir (default ~/mindgap_vault)")
+    p.set_defaults(func=cmd_sync)
+
     p = sub.add_parser("stats", help="counts")
     p.set_defaults(func=cmd_stats)
 
@@ -697,6 +733,21 @@ def main(argv=None):
     mc.add_argument("--k", type=int, default=15)
     mc.add_argument("--apply", help="path to a pre-adjudicated decisions.json to commit")
     p.set_defaults(func=cmd_mine)
+
+    p = sub.add_parser("supersede", help="automatic supersession: candidates / judge / write / revert")
+    ssub = p.add_subparsers(dest="sup_cmd", required=True)
+    sc = ssub.add_parser("candidates", help="deterministic candidate pairs since the watermark (advances it)")
+    sc.add_argument("--all", action="store_true", help="ignore the watermark (backfill)")
+    sc.add_argument("--json", action="store_true")
+    sj = ssub.add_parser("judge", help="spawn the detached claude judge on fresh candidates")
+    sj.add_argument("--run-id")
+    sj.add_argument("--all", action="store_true", help="ignore the watermark (backfill)")
+    sw = ssub.add_parser("write", help="INSERT OR IGNORE judged supersedes edges for a run")
+    sw.add_argument("--run-id", required=True)
+    sw.add_argument("--pairs", required=True, help='JSON list of {"newer","older","reason"}')
+    sr = ssub.add_parser("revert", help="delete exactly the edges written by RUN_ID")
+    sr.add_argument("run_id")
+    p.set_defaults(func=cmd_supersede)
 
     p = sub.add_parser("serve", help="web UI")
     p.add_argument("--port", type=int, default=8765)

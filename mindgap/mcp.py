@@ -27,7 +27,7 @@ INSTRUCTIONS = (
 TYPES = {"concept", "definition", "software", "repo", "page", "paper", "person",
          "team", "design", "feature", "learning", "jira-ticket", "todo", "stub"}
 RELS = {"relates_to", "defines", "implements", "depends_on", "cites", "part_of",
-        "mentions", "assigned_to", "reported_by", "resolved_by"}
+        "mentions", "assigned_to", "reported_by", "resolved_by", "supersedes"}
 # Recognised provenance forms: loop sessions, skills, the SessionEnd capture
 # hook (created_by=capture:<repo>), and hand/tool writes.
 PROVENANCE_PREFIXES = ("loop:", "skill:", "capture:")
@@ -296,6 +296,8 @@ def tool_context(conn, args):
     lines = []
     for node in nodes:
         lines.append(f"## {node['title']} ({node['id']}) [{node['type']}]")
+        if node["superseded_by"]:
+            lines.append("SUPERSEDED by: " + ", ".join(node["superseded_by"]))
         if node["tags"]:
             lines.append("tags: " + ", ".join(node["tags"]))
         if node["body"]:

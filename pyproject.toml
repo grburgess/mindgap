@@ -24,4 +24,4 @@ mindgap-askuser-hook = "mindgap.askuser_hook:main"
 include = ["mindgap*"]
 
 [tool.setuptools.package-data]
-mindgap = ["web/*", "seed.json", "loops/**/*", "capture.json", "schema.sql"]
+mindgap = ["web/*", "web/modes/*", "seed.json", "loops/**/*", "capture.json", "schema.sql"]

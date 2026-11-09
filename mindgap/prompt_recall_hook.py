@@ -71,7 +71,7 @@ def rank(conn, prompt: str, cwd: str, limit: int) -> list:
     here = {_stem(t) for t in tokens_from_cwd(cwd)}
     pool = {}
     for t in toks:
-        for n in db.search(conn, q=stems[t], limit=300):
+        for n in db.search(conn, q=stems[t], limit=300, mode="like"):
             pool.setdefault(n["id"], n)
     scored = []
     for n in pool.values():
@@ -93,6 +93,33 @@ def rank(conn, prompt: str, cwd: str, limit: int) -> list:
     return [s[3] for s in scored[:limit]]
 
 
+def rank_bm25(conn, prompt: str, cwd: str, limit: int) -> list:
+    """BM25 arm, FROZEN; the live path (main) uses it since the recall_compare A/B
+    (24 queries, mean hit@6 0.875 vs rank() 0.792). rank() kept for comparison. Same tokens (prompt_tokens + _stem), same >=2-word hit test on
+    title/tags/id, same cwd/verdict boosts. Differs only in retrieval and order:
+    pool = FTS OR-query over the stems (prefix-matched); sort by number of prompt
+    words hit (AND-preferred), then -bm25 + boosts, then recency."""
+    toks = prompt_tokens(prompt)
+    if len(toks) < 2:
+        return []
+    stems = {t: _stem(t) for t in toks}
+    here = {_stem(t) for t in tokens_from_cwd(cwd)}
+    terms = list(dict.fromkeys(w for t in toks for w in db.fts_terms(stems[t])))
+    scored = []
+    for n, bm25 in db.fts_search(conn, terms, op="OR", limit=500):
+        title, tags, ident = _fields(n)
+        hit = [t for t in toks if stems[t] in title or stems[t] in tags or stems[t] in ident]
+        score = -bm25
+        if here & (title | tags | ident):
+            score += 0.5
+        if n.get("type") in VERDICT_TYPES:
+            score += 1.0
+        scored.append((len(hit), score, n.get("updated_at") or "", n))
+    scored = [s for s in scored if s[0] >= 2]
+    scored.sort(key=lambda s: (s[0], s[1], s[2]), reverse=True)
+    return [s[3] for s in scored[:limit]]
+
+
 def main(stdin_text=None) -> int:
     raw = stdin_text if stdin_text is not None else sys.stdin.read()
     try:
@@ -109,7 +136,11 @@ def main(stdin_text=None) -> int:
     try:
         conn = db.connect()
         try:
-            hits = rank(conn, hook_input.get("prompt", ""), cwd, rcfg.get("max_prompt", 6))
+            # superseded nodes never reach a session; over-fetch, drop, then cut
+            sup = db.superseded_ids(conn)
+            limit = rcfg.get("max_prompt", 6)
+            hits = rank_bm25(conn, hook_input.get("prompt", ""), cwd, limit + len(sup))
+            hits = [n for n in hits if n["id"] not in sup][:limit]
         finally:
             conn.close()
     except Exception:

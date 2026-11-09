@@ -16,7 +16,8 @@ Two interfaces, same db: the **CLI** (above) and the **MCP server** (`python3 -m
 ## Vocabularies
 
 - Node `type`: `concept | definition | software | repo | page | paper | person | team | design | feature | learning | jira-ticket | todo | stub`
-- Edge `rel`: `relates_to | defines | implements | depends_on | cites | part_of | mentions | assigned_to | reported_by | resolved_by`
+- Edge `rel`: `relates_to | defines | implements | depends_on | cites | part_of | mentions | assigned_to | reported_by | resolved_by | supersedes`
+  - `supersedes`: src = the NEWER node, dst = the older one it makes no longer current. Recall hides the dst; find/API mark it `superseded_by`. Write it only when the old claim is no longer true NOW (not for a baseline vs its later result, a scope/version split, or a rule beside its special case). Automatic runs use `mindgap supersede` (`created_by supersede:<run-id>`, revertable per run).
 - Todo status: an **open** todo is a `type='todo'` node tagged neither
   `status:done` nor `status:dropped` — both are terminal. `status:doing` is
   in-flight work and stays open. A todo carrying no `status:*` tag at all is
