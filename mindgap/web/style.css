@@ -175,6 +175,9 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline-offs
   transition: color var(--dur-1) var(--snap), background-color var(--dur-1) var(--snap);
 }
 .seg button:hover { color: var(--text); }
+.view-seg { flex-wrap: wrap; }                       /* settings → look → view picker (modes/modes.js) */
+.view-seg button:disabled { opacity: .35; cursor: not-allowed; }
+.view-seg button i { font-style: normal; font-size: 8px; letter-spacing: .08em; opacity: .8; }
 .seg button.active {
   background: var(--accent-dim);
   color: var(--accent-ink);
@@ -753,6 +756,10 @@ button.ghost.port::before { width: 5px; height: 5px; margin-right: 6px; }
   background: linear-gradient(var(--dim), var(--dim)) no-repeat 1px 1px / 8px 8px;
   transition: background-position var(--dur-1) var(--snap);
 }
+.seg-toggle:disabled { opacity: .4; cursor: not-allowed; }   /* vetoed (e.g. alive drift in fixed layouts) */
+.seg-toggle:disabled:hover { color: var(--dim); }
+.seg-toggle.on:disabled:hover { color: var(--text); }
+.seg-note { font: 400 9px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); padding: 0 2px 4px; }
 .seg-toggle.on::after {
   border-color: var(--line-strong);
   background:

@@ -16,7 +16,19 @@ def connect(path=None):
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    _sync_fts(conn)
     return conn
+
+
+def _sync_fts(conn):
+    """Rebuild the full-text index when its row count is out of step with nodes --
+    first open of a DB created before the index existed, or rows written by code
+    that bypassed the triggers. Triggers keep it in step otherwise."""
+    n = conn.execute("SELECT (SELECT count(*) FROM nodes), (SELECT count(*) FROM nodes_fts)").fetchone()
+    if n[0] != n[1]:
+        conn.execute("DELETE FROM nodes_fts")
+        conn.execute("INSERT INTO nodes_fts(id,title,body,tags) SELECT id,title,body,tags FROM nodes")
+        conn.commit()
 
 
 def _now():
@@ -187,28 +199,92 @@ def delete_edge(conn, src, dst, rel=None):
     conn.commit()
 
 
-def search(conn, q="", type=None, tag=None, limit=50, tag_mode="exact"):
+# bm25 column weights, in nodes_fts column order: id, title, body, tags.
+# Title outweighs body: a word in the title says what the node is about.
+_BM25_WEIGHTS = (2.0, 10.0, 1.0, 3.0)
+
+
+def fts_terms(q):
+    """User text -> plain lowercase word tokens. Everything that is not a letter or
+    digit is dropped, so FTS syntax (quotes, *, :, ^, parens, -) never reaches MATCH."""
+    return re.findall(r"[^\W_]+", (q or "").lower())
+
+
+def _fts_expr(terms, op="AND"):
+    # every term quoted (so AND/OR/NOT/NEAR are plain words) and prefix-matched
+    return f" {op} ".join(f'"{t}"*' for t in terms)
+
+
+def _filters(type, tag, tag_mode, col=""):
     where, params = [], []
-    if q:
-        like = f"%{q}%"
-        where.append("(id LIKE ? OR title LIKE ? OR body LIKE ? OR tags LIKE ?)")
-        params += [like] * 4
     if type:
-        where.append("type=?")
+        where.append(f"{col}type=?")
         params.append(type)
     if tag:
         if tag_mode == "contains":  # case-insensitive substring (web tag box)
-            where.append("lower(tags) LIKE ?")
+            where.append(f"lower({col}tags) LIKE ?")
             params.append(f"%{tag.lower()}%")
         else:  # exact tag token (CLI/MCP --tag)
-            where.append("tags LIKE ?")
+            where.append(f"{col}tags LIKE ?")
             params.append(f'%"{tag}"%')
+    return where, params
+
+
+def fts_search(conn, terms, op="AND", type=None, tag=None, limit=50, tag_mode="exact"):
+    """BM25-ranked full-text search. terms: tokens (see fts_terms), each prefix-matched,
+    joined by op ("AND"/"OR"). Returns [(node, bm25)] best first (bm25: lower = better)."""
+    if not terms:
+        return []
+    where, params = _filters(type, tag, tag_mode, col="n.")
+    sql = (f"SELECT n.*, bm25(nodes_fts, {', '.join(map(str, _BM25_WEIGHTS))}) AS _bm25"
+           " FROM nodes_fts JOIN nodes n ON n.id = nodes_fts.id WHERE nodes_fts MATCH ?")
+    sql += "".join(f" AND {w}" for w in where)
+    sql += " ORDER BY _bm25, n.updated_at DESC, n.id LIMIT ?"
+    out = []
+    for r in conn.execute(sql, [_fts_expr(terms, op), *params, limit]):
+        d = _decode(r)
+        out.append((d, d.pop("_bm25")))
+    return out
+
+
+SUPERSEDES = "supersedes"  # edge src = newer node, dst = older (superseded) node
+
+
+def superseded_ids(conn):
+    """Ids of superseded nodes: the dst of any 'supersedes' edge."""
+    return {r[0] for r in conn.execute("SELECT DISTINCT dst FROM edges WHERE rel=?", (SUPERSEDES,))}
+
+
+def mark_superseded(conn, nodes):
+    """Set n["superseded_by"] = sorted ids of newer nodes ([] when not superseded),
+    in place. Returns nodes."""
+    by = {}
+    for r in conn.execute("SELECT src, dst FROM edges WHERE rel=?", (SUPERSEDES,)):
+        by.setdefault(r["dst"], []).append(r["src"])
+    for n in nodes:
+        n["superseded_by"] = sorted(by.get(n["id"], []))
+    return nodes
+
+
+def search(conn, q="", type=None, tag=None, limit=50, tag_mode="exact", mode="fts"):
+    """mode="fts": BM25-ranked, words ANDed, each word prefix-matched; when that finds
+    nothing, falls back to the substring match. mode="like": substring match only
+    (id/title/body/tags LIKE %q%, newest first) -- what the recall hooks rely on."""
+    if q and mode == "fts":
+        hits = fts_search(conn, fts_terms(q), "AND", type, tag, limit, tag_mode)
+        if hits:
+            return mark_superseded(conn, [n for n, _ in hits])
+    where, params = _filters(type, tag, tag_mode)
+    if q:
+        like = f"%{q}%"
+        where.insert(0, "(id LIKE ? OR title LIKE ? OR body LIKE ? OR tags LIKE ?)")
+        params = [like] * 4 + params
     sql = "SELECT * FROM nodes"
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY updated_at DESC, id LIMIT ?"
     params.append(limit)
-    return [_decode(r) for r in conn.execute(sql, params)]
+    return mark_superseded(conn, [_decode(r) for r in conn.execute(sql, params)])
 
 
 def _links_among(conn, ids):
@@ -248,7 +324,7 @@ def graph(conn, q=None, type=None, tag=None, tag_mode="exact"):
     if q or type or tag:
         nodes = search(conn, q or "", type, tag, limit=-1, tag_mode=tag_mode)  # LIMIT -1 = unbounded
     else:
-        nodes = [_decode(r) for r in conn.execute("SELECT * FROM nodes")]
+        nodes = mark_superseded(conn, [_decode(r) for r in conn.execute("SELECT * FROM nodes")])
     return {"nodes": nodes, "links": _links_among(conn, [n["id"] for n in nodes])}
 
 

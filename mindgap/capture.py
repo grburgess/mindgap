@@ -22,6 +22,10 @@ DEFAULTS = {
                 "max_nodes_per_session": 15, "default_confidence": 0.6},
     "recall": {"enabled": True, "max_nodes": 12, "max_global": 5, "prompt": True, "max_prompt": 6},
     "lint": {"stale_days": 60, "stale_below_confidence": 0.7},
+    # M2: after a capture child exits, the capture supervisor runs the supersede
+    # judge (supersede.judge) — never inside the SessionEnd hook process.
+    "supersede": {"after_capture": True, "model": "sonnet", "timeout_s": 300,
+                  "batch_pairs": 25},
 }
 
 

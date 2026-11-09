@@ -28,7 +28,10 @@ class CaptureHookTest(unittest.TestCase):
             "enabled": True, "domain": {"description": "roof models.", "keywords": ["roof"]},
             "min_transcript_bytes": 5,
             "capture": {"model": "claude-haiku-4-5", "timeout_s": 60,
-                        "default_confidence": 0.6}}))
+                        "default_confidence": 0.6},
+            # post-capture judge is covered by test_supersede; off here so the
+            # supervisor exits with the capture child (no tearDown race).
+            "supersede": {"after_capture": False}}))
         self.tx = Path(self.tmp.name) / "t.jsonl"
         self.tx.write_text(self._jsonl("talking about roof segmentation") * 5)
         self.env = dict(os.environ, PYTHONPATH=REPO,
@@ -53,6 +56,9 @@ class CaptureHookTest(unittest.TestCase):
         return p.read_text() if p.exists() else ""
 
     def tearDown(self):
+        # detached supervisor writes capture.log/-child.log, THEN releases the lock;
+        # rmtree while it still writes -> "Directory not empty: 'home'" (flake)
+        self._wait(lambda: not (self.home / "capture.lock").exists(), 10)
         self.tmp.cleanup()
 
     def _run(self, hook_input):
@@ -111,7 +117,7 @@ class CaptureHookTest(unittest.TestCase):
         self._run({"transcript_path": str(self.tx), "cwd": "/tmp/r", "session_id": "S3"})
         self.assertTrue(self._wait(lambda: "session=S3 exit=timeout" in self._log(), 8),
                         self._log())
-        self.assertFalse((self.home / "capture.lock").exists())
+        self.assertTrue(self._wait(lambda: not (self.home / "capture.lock").exists()))
 
     def test_skip_reason_is_logged(self):
         self.tx.write_text(self._jsonl("nothing relevant here") * 5)

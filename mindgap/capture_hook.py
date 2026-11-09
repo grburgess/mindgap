@@ -5,6 +5,7 @@ on stdin ({session_id, transcript_path, cwd, reason}) and NEVER blocks session
 exit: it spawns a detached supervisor and returns 0 immediately. The supervisor
 runs `claude -p` with only the tools capture needs pre-approved (a headless run
 denies everything else), kills it after capture.timeout_s, and releases the lock.
+Then, if supersede.after_capture (default on), it spawns the supersede judge.
 One line per session end goes to <data_dir>/capture.log; child output to
 <data_dir>/capture-child.log.
 """
@@ -65,7 +66,8 @@ def spawn(claude, hook_input, cfg):
                    "--allowedTools", *allowed_tools(hook_input.get("transcript_path", "")),
                    "--model", cfg["capture"]["model"]],
            "timeout_s": cfg["capture"]["timeout_s"],
-           "session": hook_input.get("session_id", "")}
+           "session": hook_input.get("session_id", ""),
+           "supersede": bool(cfg.get("supersede", {}).get("after_capture"))}
     pkg_parent = str(Path(__file__).resolve().parents[1])
     env = dict(os.environ, MINDGAP_CAPTURE="1",
                PYTHONPATH=pkg_parent + os.pathsep + os.environ.get("PYTHONPATH", ""))
@@ -91,7 +93,24 @@ def supervise(job) -> int:
         log(f"session={job['session']} exit={status}")
     finally:
         capture.release_lock()
+    if job.get("supersede"):
+        after_capture(job)
     return 0
+
+
+def after_capture(job) -> None:
+    """Post-capture step: spawn the supersede judge on what capture just wrote.
+    Runs in this detached supervisor, so session exit is never delayed."""
+    from . import db, supersede
+    try:
+        conn = db.connect()
+        try:
+            out = supersede.judge(conn, claude=job["cmd"][0])
+        finally:
+            conn.close()
+        log(f"session={job['session']} supersede={out['status']} run={out['run_id']}")
+    except Exception as e:  # detached: log, never raise into the void
+        log(f"session={job['session']} supersede=error {e!r}")
 
 
 def main(stdin_text=None) -> int:

@@ -16,7 +16,7 @@ Two interfaces, same db: the **CLI** (above) and the **MCP server** (`python3 -m
 ## Vocabularies
 
 - Node `type`: `concept | definition | software | repo | page | paper | person | team | stub`
-- Edge `rel`: `relates_to | defines | implements | depends_on | cites | part_of | mentions`
+- Edge `rel`: `relates_to | defines | implements | depends_on | cites | part_of | mentions | supersedes`
 
 ## Near-duplicate check
 

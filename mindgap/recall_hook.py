@@ -67,17 +67,21 @@ def build_digest(hook_input, cfg) -> str:
     conn = db.connect()
     try:
         rcfg = cfg["recall"]
-        seen, matched, learnings = set(), [], []
+        # superseded nodes (dst of a 'supersedes' edge) never reach a session;
+        # pre-seeding `seen` drops them, the widened limits keep the counts full
+        sup = db.superseded_ids(conn)
+        seen, matched, learnings = set(sup), [], []
         for tok in tokens_from_cwd(hook_input.get("cwd", "")):
-            for n in db.search(conn, q=tok, limit=rcfg["max_nodes"] * 4):
+            for n in db.search(conn, q=tok, limit=rcfg["max_nodes"] * 4 + len(sup), mode="like"):
                 if n["id"] not in seen and _token_matches(n, tok):
                     seen.add(n["id"])
                     matched.append(n)
         matched = matched[: rcfg["max_nodes"]]
-        for n in db.search(conn, tag="global-learning", limit=rcfg["max_global"]):
+        for n in db.search(conn, tag="global-learning", limit=rcfg["max_global"] + len(sup)):
             if n["id"] not in seen:
                 seen.add(n["id"])
                 learnings.append(n)
+        learnings = learnings[: rcfg["max_global"]]
     finally:
         conn.close()
     if not matched and not learnings:

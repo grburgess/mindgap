@@ -10,6 +10,7 @@ REPO = str(Path(__file__).resolve().parents[1])
 sys.path.insert(0, REPO)
 
 from mindgap import db  # noqa: E402
+from mindgap import prompt_recall_hook as prh  # noqa: E402
 from mindgap.prompt_recall_hook import prompt_tokens  # noqa: E402
 
 
@@ -96,6 +97,27 @@ class PromptRecallHookTest(unittest.TestCase):
                               input="nope", capture_output=True, text=True,
                               env=self.env, timeout=15)
         self.assertEqual((proc.returncode, proc.stdout), (0, ""))
+
+    def test_main_uses_bm25_arm(self):
+        # rank() orders by field-weighted score: a 2-word title hit on a decision
+        # (2+2+1=5.0) beats a 3-word tag-only hit (1.5*3=4.5). rank_bm25 orders by
+        # words hit first, so the 3-word node wins. With max_prompt=1 the hook's
+        # single line shows which arm main() used (frozen rule, 24-query A/B).
+        conn = db.connect(self.home / "mindgap.db")
+        db.upsert_node(conn, {"id": "decision-ocelot-quokka", "type": "decision",
+                              "title": "Ocelot quokka ruling", "tags": [], "body": "x"})
+        db.upsert_node(conn, {"id": "note-z1", "type": "finding", "title": "Unrelated",
+                              "tags": ["ocelot", "quokka", "wombat"], "body": "x"})
+        prompt = "ocelot quokka wombat"
+        self.assertEqual(prh.rank(conn, prompt, "", 1)[0]["id"], "decision-ocelot-quokka")
+        self.assertEqual(prh.rank_bm25(conn, prompt, "", 1)[0]["id"], "note-z1")
+        conn.close()
+        (self.home / "capture.json").write_text(json.dumps(
+            {"enabled": True, "recall": {"enabled": True, "prompt": True, "max_prompt": 1}}))
+        proc = self._run({"cwd": "/tmp/x", "session_id": "S8", "prompt": prompt})
+        lines = [l for l in proc.stdout.splitlines() if l.startswith("- ")]
+        self.assertEqual(len(lines), 1, proc.stdout)
+        self.assertIn("note-z1", lines[0])
 
     def test_prompt_tokens(self):
         self.assertEqual(prompt_tokens("Should we add a cache layer to WIDGET?"),

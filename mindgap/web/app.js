@@ -2,7 +2,7 @@
 'use strict';
 
 const TYPES = ['concept', 'definition', 'software', 'repo', 'page', 'paper', 'person', 'team', 'design', 'feature', 'learning', 'jira-ticket', 'todo', 'stub', 'finding', 'reference', 'verified-fact', 'project', 'idea', 'fact', 'process', 'decision', 'gotcha'];
-const RELS = ['relates_to', 'defines', 'implements', 'depends_on', 'cites', 'part_of', 'mentions', 'assigned_to', 'reported_by', 'resolved_by'];
+const RELS = ['relates_to', 'defines', 'implements', 'depends_on', 'cites', 'part_of', 'mentions', 'assigned_to', 'reported_by', 'resolved_by', 'supersedes'];
 const TYPE_COLORS = {
   // 2026-09-24: muted palette. Hue families borrowed from Obsidian's base colours (red 25,
   // orange 65, yellow 100, green 150, cyan 195, blue 250, purple 295, pink 350 in OKLCH),
@@ -41,7 +41,9 @@ const SETTINGS_DEFAULTS = Object.freeze({
   charge: -260, linkDist: 55, linkStrength: 0.3, velocityDecay: 0.32, collide: true, gravity: 0.1, centerForce: 0, // physics
   labelMode: 'hubs', linkOpacity: 0.30, arrows: true, starfield: true, autoRotate: false, edgeFlow: true, bloom: true, warp: true, ambient: true, recallFire: true, // visual
   colorBy: 'type', showHulls: true, showClusterLabels: true, showClusterLegend: true, clusterForce: false,    // clusters
-  theme: 'editorial',                                                                // appearance
+  theme: 'editorial', glow: 0.5,                                                     // appearance (glow 0.5 = the original bloom look)
+  linkPulses: false, aliveDrift: false, orbitRings: false, autoTour: false,          // look → motion (3D, motion.js); all off = today's look
+  viewMode: 'graph',                                                                 // 3D view mode (modes/modes.js); graph = force layout
 });
 function loadSettings() {
   try { return { ...SETTINGS_DEFAULTS, ...JSON.parse(localStorage.getItem('mm.settings') || '{}') }; }
@@ -89,6 +91,26 @@ function mixHex(a, b, f) {
   const c = (x, y) => Math.round(x + (y - x) * Math.min(Math.max(f, 0), 1)).toString(16).padStart(2, '0');
   return '#' + c(r1, r2) + c(g1, g2) + c(b1, b2);
 }
+// superseded nodes (dst of a 'supersedes' edge; the API marks them with a non-empty
+// superseded_by list) draw dimmed: desaturated toward grey, then sunk toward the theme bg.
+// An opaque hex, not rgba: instanced3d (3D) drops alpha, so one colour serves 2D and 3D.
+// Any CSS colour (hex / hsl community hues) is normalised to hex via a 1px canvas; memoised
+// because nodeColor runs per node per frame.
+const SUPERSEDED_GREY = 0.5, SUPERSEDED_SINK = 0.7;
+function isSuperseded(n) { return !!(n.superseded_by && n.superseded_by.length); }
+let _cssCtx = null;
+const _dimCache = new Map();
+function supersededColor(c) {
+  const bg = themeBg(), key = c + '|' + bg;
+  let out = _dimCache.get(key);
+  if (out) return out;
+  _cssCtx = _cssCtx || document.createElement('canvas').getContext('2d');
+  _cssCtx.fillStyle = '#000'; _cssCtx.fillStyle = c;
+  const hex = String(_cssCtx.fillStyle);
+  out = /^#[0-9a-f]{6}$/i.test(hex) ? mixHex(mixHex(hex, '#8b9692', SUPERSEDED_GREY), bg, SUPERSEDED_SINK) : c;
+  _dimCache.set(key, out);
+  return out;
+}
 
 // dark themes — each maps CSS custom properties (+ graph bg via --bg). Node type/community
 // colors stay fixed (they read on any dark base); themes swap chrome surfaces + accents.
@@ -101,14 +123,82 @@ const THEMES = {
   graphite:  { '--bg': '#0e0e10', '--bg-raised': '#16161a', '--bg-panel': '#131316', '--line': '#2a2a30', '--text': '#e0ddd6', '--dim': '#8a857c', '--green': '#e0a458', '--purple': '#5ec8b8', '--danger': '#e8765a' },
   aubergine: { '--bg': '#120c16', '--bg-raised': '#1a1020', '--bg-panel': '#160d1b', '--line': '#2e2138', '--text': '#e6dcea', '--dim': '#988aa0', '--green': '#c77dff', '--purple': '#ff6ac1', '--danger': '#ff7a7a' },
   carbon:    { '--bg': '#050505', '--bg-raised': '#0d0d0f', '--bg-panel': '#0a0a0c', '--line': '#232327', '--text': '#ececf0', '--dim': '#80808a', '--green': '#57c7a4', '--purple': '#7aa2ff', '--danger': '#e76f51' },
+  // Neon themes (2026-11) — chrome vars here; node-type palette + link colour live in NEON_LOOKS.
+  synthwave: { '--bg': '#0b0420', '--bg-raised': '#160a33', '--bg-panel': '#110729', '--line': '#2d1b55', '--text': '#f3e8ff', '--dim': '#9a83c4', '--green': '#ff2a6d', '--purple': '#05d9e8', '--danger': '#ff5c5c' },
+  cyberpunk: { '--bg': '#0a0a0f', '--bg-raised': '#15151d', '--bg-panel': '#101017', '--line': '#2a2a38', '--text': '#f0f0e8', '--dim': '#8a8a9a', '--green': '#fcee0a', '--purple': '#00f0ff', '--danger': '#ff003c' },
+  tron:      { '--bg': '#020608', '--bg-raised': '#071318', '--bg-panel': '#050e12', '--line': '#0f2a33', '--text': '#d8f6ff', '--dim': '#5f8a96', '--green': '#18e5ff', '--purple': '#ff9a1f', '--danger': '#ff4f1f' },
+  matrix:    { '--bg': '#000301', '--bg-raised': '#021006', '--bg-panel': '#010803', '--line': '#0a2e12', '--text': '#c8ffd4', '--dim': '#4f8a5c', '--green': '#00ff41', '--purple': '#b6ff9e', '--danger': '#ff3b3b' },
+  galaxy:    { '--bg': '#000000', '--bg-raised': '#0a0a14', '--bg-panel': '#06060e', '--line': '#1a1a2c', '--text': '#eceaff', '--dim': '#8a88a8', '--green': '#a8d8ff', '--purple': '#ffb8e6', '--danger': '#ff9aa2' },
+  filament:  { '--bg': '#01040a', '--bg-raised': '#06101c', '--bg-panel': '#040b15', '--line': '#11263a', '--text': '#dcefff', '--dim': '#6f8fae', '--green': '#5fd4ff', '--purple': '#9fb8ff', '--danger': '#ff8a8a' },
 };
-const THEME_NAMES = { obsidian: 'Obsidian', editorial: 'Editorial', midnight: 'Midnight', graphite: 'Graphite', aubergine: 'Aubergine', carbon: 'Carbon' };
+const THEME_NAMES = { obsidian: 'Obsidian', editorial: 'Editorial', midnight: 'Midnight', graphite: 'Graphite', aubergine: 'Aubergine', carbon: 'Carbon', synthwave: 'Synthwave', cyberpunk: 'Cyberpunk', tron: 'Tron', matrix: 'Matrix', galaxy: 'Galaxy', filament: 'Filament' };
+// Neon looks: a theme listed here ALSO overrides the node-type palette (nodes, sidebar dots, type
+// chips) and the link colour. Themes NOT listed keep TYPE_COLORS + the stock link rgba exactly.
+// Palette = one colour per type FAMILY (same grouping as TYPE_COLORS); members step toward white
+// so the family reads at a distance and the exact type still separates up close.
+// link: rgb triple; linkK: multiplier on settings.linkOpacity; hl: highlighted-link rgb;
+// photon/arrow: 3D edge-flow + arrow colours; additive: additive-blend edges (luminous filaments);
+// linkByType: each link takes its SOURCE node's type colour (regions read by hue, galaxy-view style).
+// step: per-member mix toward white (default 0.14); smaller keeps family hues saturated; hub: hub-sphere tint.
+const TYPE_FAMILIES = [
+  ['concept', 'definition', 'learning', 'finding', 'verified-fact', 'fact'],        // claims
+  ['repo', 'page', 'paper', 'reference', 'event'],                                  // sources
+  ['software', 'feature', 'jira-ticket', 'project', 'process', 'skill'],            // work
+  ['design', 'idea', 'decision'],                                                   // judgment
+  ['person', 'team'],                                                               // people
+  ['todo', 'gotcha'],                                                               // alerts
+  ['stub'],                                                                         // stubs
+];
+const NEON_LOOKS = {
+  synthwave: { fam: ['#05d9e8', '#ff8b3d', '#b967ff', '#ff2a6d', '#ff6ec7', '#f9f871', '#4a3a6a'], link: '185,103,255', linkK: 1.2, hl: '5,217,232', photon: '#ff2a6d', arrow: '#b967ff' },
+  cyberpunk: { fam: ['#00f0ff', '#fcee0a', '#ff00a0', '#b026ff', '#ff6ad5', '#ff003c', '#3a3a48'], link: '255,0,160', linkK: 1.1, hl: '252,238,10', photon: '#00f0ff', arrow: '#ff00a0' },
+  tron:      { fam: ['#18e5ff', '#ff9a1f', '#6fc3df', '#ffd27a', '#ff6b1f', '#ff3d1f', '#20414a'], link: '24,229,255', linkK: 1.2, hl: '255,154,31', photon: '#ff9a1f', arrow: '#18e5ff' },
+  // matrix: phosphor family, one clear hue per type family — code green claims, phosphor-cyan sources,
+  // acid-lime work, deep teal judgment, pale phosphor people, amber alerts (sparing). Thin dim links;
+  // hub: hub bloom spheres pulled toward near-white phosphor so hubs punch out of the green mass.
+  matrix:    { fam: ['#00ff41', '#2ef2ff', '#b6ff00', '#00b894', '#d8ffe0', '#ffb000', '#1f5a2c'], step: 0.07, link: '0,255,90', linkK: 0.4, hl: '216,255,224', photon: '#00ff41', arrow: '#00c853', hub: '#f0fff4' },
+  // galaxy: luminous neon pastels on true black — mint claims, peach-coral sources, ice-cyan work,
+  // electric-lavender judgment, hot-pink people, gold alerts; fine additive links tinted by the source
+  // type (low alpha so the core never sums to white). bloomHue: bloom.js keeps dense hubs on their hue
+  // (white component of the bloom cut, extra glow tinted + headroom-capped) instead of a white smear.
+  galaxy:    { fam: ['#30de97', '#ff9659', '#1fd5ff', '#cfa2ff', '#ff8dd7', '#efb52a', '#4a3a78'], step: 0.06, link: '160,130,255', linkK: 1.3, linkDeep: true, hl: '255,240,255', photon: '#d9b8ff', arrow: '#b48cff', additive: true, linkByType: true, bloomHue: 1, hubSat: true, flat: true },
+  // filament: monochrome ice-blue/cyan fibre web (Graphyx-style) — very many thin additive links carry
+  // the look, nodes are tiny bright points (nodeK shrinks the 3D spheres; hubK keeps hub bloom spheres
+  // larger than the dots so glow still reads), hubs tinted toward a bright cyan.
+  // Families separate only faintly within blue→cyan→white-blue. nebula: soft blue haze sprite behind
+  // the graph (starfield.js; static texture, no per-frame CPU) + a dimmer star sky (stars).
+  filament:  { fam: ['#2fa6d8', '#4fd0ea', '#2a86c8', '#7cc6e6', '#5f9fd8', '#b8ecf8', '#1a3448'], step: 0.05, link: '50,140,190', linkK: 0.65, hl: '225,246,255', photon: '#c8f0ff', arrow: '#5fb8e0', hub: '#1878b0', additive: true, linkByType: true, flat: true, nodeK: 0.3, hubK: 2, nebula: { color: '#2a78b8', opacity: 0.75, stars: 0.25 } },
+};
+for (const L of Object.values(NEON_LOOKS)) {
+  L.types = {}; L.rgb = {};
+  TYPE_FAMILIES.forEach((members, f) => members.forEach((t, i) => { L.types[t] = mixHex(L.fam[f], '#ffffff', i * (L.step || 0.14)); }));
+  for (const t in L.types) { const h = L.types[t]; L.rgb[t] = [1, 3, 5].map((k) => parseInt(h.slice(k, k + 2), 16)).join(','); }
+  // linkDeep: link rgb = the type colour sRGB-decoded (same hue, deeper + more saturated) so additive
+  // filaments stay hued where thousands overlap instead of summing pastel-white
+  if (L.linkDeep) for (const t in L.rgb) L.rgb[t] = L.rgb[t].split(',').map((v) => { const c = v / 255;
+    return Math.round(255 * (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)); }).join(',');
+}
+function themeLook() { return NEON_LOOKS[state.settings.theme] || null; }
+function typeColor(t, fb = '#8b9692') { const L = themeLook(); return (L ? L.types : TYPE_COLORS)[t] || fb; }
+// 3D edge-FX colours (instanced3d build reads these); null = stock colours
+function themeFx() { const L = themeLook(); return L ? { photon: L.photon, arrow: L.arrow, additive: !!L.additive, hub: L.hub || null, hubSat: !!L.hubSat, flat: !!L.flat, hubK: L.hubK || 1 } : null; }
 function themeBg() { return (THEMES[state.settings.theme] || THEMES.editorial)['--bg']; }
 function applyTheme(name) {
   const t = THEMES[name] || THEMES.editorial;
   for (const k in t) document.documentElement.style.setProperty(k, t[k]);
   if (graph) graph.backgroundColor(t['--bg']);
   if (window.Instanced3d) Instanced3d.refreshBg();   // recall-firing dims toward the bg
+  // type palette + link colour may have changed: type chips, open sidebar, graph colours
+  document.querySelectorAll('#type-chips .chip').forEach((b) => {
+    const i = b.querySelector('.tport'); if (i) i.style.setProperty('--tc', typeColor(b.dataset.type));
+  });
+  if (state.selected && !sidebar.classList.contains('hidden')) selectNode(state.selected, { center: false });
+  if (graph && state.mode === '3d' && window.Instanced3d) {
+    if (window.Modes) Modes.dataChanged();            // view-mode decorations take the new palette
+    Instanced3d.rebuild();                            // hub bloom spheres, photons, arrows, edge blend
+    if (window.Bloom) Bloom.refresh();
+    if (window.Motion) Motion.refresh();              // pulse/ring colours follow the theme
+  } else if (graph) refreshStyles();
 }
 
 const state = {
@@ -135,7 +225,9 @@ let mountedMode = null;
 let panTimer = null;                    // 2D link-LOD: hide edges while panning, restore ~300ms after
 // perf instrumentation: expose the live graph instance + state to injected harnesses
 // (tools/perf/fps_harness.js). getter is required — `graph` is reassigned on 2D↔3D remount.
-window.__mm = { get graph() { return graph; }, state, get act() { return act; } };
+window.__mm = { get graph() { return graph; }, state, get act() { return act; },
+  // verifier hook: the colour a node is painted with (2D + 3D share nodeColorFor)
+  nodeColor(id) { const n = graph && graph.graphData().nodes.find((x) => x.id === id); return n ? nodeColorFor(n) : null; } };
 
 const $ = (sel) => document.querySelector(sel);
 const graphEl = $('#graph');
@@ -270,7 +362,8 @@ function viewData() {
 /* ---------- graph ---------- */
 
 function nodeTooltip(n) {
-  return `<div class="gtip"><b>${esc(n.title)}</b> <span>${esc(n.type)}</span></div>`;
+  const sup = isSuperseded(n) ? ` <span>superseded by ${esc(n.superseded_by.join(', '))}</span>` : '';
+  return `<div class="gtip"><b>${esc(n.title)}</b> <span>${esc(n.type)}</span>${sup}</div>`;
 }
 
 const LABEL_ZOOM = 4, HUB_COUNT = 18;
@@ -634,7 +727,9 @@ function applyForces(g) {
 }
 
 // passed to Glow3d (3D topic orbs) — thin getters, no coupling to app internals
-const glowCtx = { getClusters: () => state.clusters, getSettings: () => state.settings };
+const glowCtx = { getClusters: () => state.clusters, getSettings: () => state.settings, isNeon: () => !!themeLook(),
+  bloomHue: () => { const L = themeLook(); return (L && L.bloomHue) || 0; },
+  nebula: () => { const L = themeLook(); return (L && L.nebula) || null; } };
 
 // directional energy particles along links; a highlighted node's incident links pulse
 // brighter/faster in accent green, others stay faint. idempotent re-set of the accessors,
@@ -662,20 +757,41 @@ function nodeColorFor(n) {
   // when off ('off' default) the community/type base is untouched. While a cluster is
   // isolated the override is skipped for its members so the bright-vs-dim contrast holds.
   const inActiveCluster = state.activeCluster != null && C && C.byId.get(n.id) === state.activeCluster;
-  const base = state.timeline.colorMode !== 'off' && !inActiveCluster
+  const hue = state.timeline.colorMode !== 'off' && !inActiveCluster
     ? timelineNodeColor(n)
     : (byC
         ? (C.byId.has(n.id) ? C.communities[C.byId.get(n.id)].color : '#5b6663')
-        : (TYPE_COLORS[n.type] || '#8b9692'));
+        : typeColor(n.type));
+  const base = isSuperseded(n) ? supersededColor(hue) : hue;
   if (state.activeCluster != null && (!C || C.byId.get(n.id) !== state.activeCluster))
     return 'rgba(91,102,99,0.18)';
   const hl = state.hoverHl || state.hl;
   if (!hl) return base;
   return n.id === hl.id || hl.nbs.has(n.id) ? base : 'rgba(91,102,99,0.25)';
 }
+// linkByType: endpoint type rgb — source, or target when the source is a stub/unpaletted type. 3D
+// writes line colours before the sim resolves l.source to an object, so string ids are looked up
+// (map cached per nodes array; only runs on colour syncs, never per frame).
+let _typeById = null, _typeNodes = null;
+function linkTypeRgb(L, l) {
+  const nodes = graph ? graph.graphData().nodes : state.raw.nodes;
+  if (nodes !== _typeNodes) { _typeNodes = nodes; _typeById = new Map(nodes.map((n) => [n.id, n.type])); }
+  const ty = (e) => (e && typeof e === 'object' ? e.type : _typeById.get(e));
+  const s = ty(l.source), t = ty(l.target);
+  return (s !== 'stub' && L.rgb[s]) || L.rgb[t] || L.rgb[s];
+}
 function linkColorFor(l) {
-  const o = state.settings.linkOpacity;
   const hl = state.hoverHl || state.hl;
+  // 3D view modes thin edges (universe: cross-system hidden); a hovered/selected node's links stay full
+  const o = state.settings.linkOpacity * (window.Modes ? Modes.linkK(l) : 1);
+  const L = themeLook();
+  if (L) {                                   // neon: themed link rgb, opacity scaled by linkK
+    const a = Math.min(1, o * L.linkK);
+    const rgb = (L.linkByType && linkTypeRgb(L, l)) || L.link;
+    if (!hl) return `rgba(${rgb},${a})`;
+    const s = l.source.id ?? l.source, t = l.target.id ?? l.target;
+    return s === hl.id || t === hl.id ? `rgba(${L.hl},0.85)` : `rgba(${rgb},${a * 0.33})`;
+  }
   if (!hl) return `rgba(140,160,152,${o})`;
   const s = l.source.id ?? l.source, t = l.target.id ?? l.target;
   return s === hl.id || t === hl.id
@@ -688,12 +804,14 @@ function renderGraph() {
     applyData(viewData());
     return;
   }
+  if (window.Modes) Modes.teardown();
   if (window.Glow3d) Glow3d.teardown();
   if (window.Starfield) Starfield.teardown();
   if (window.AutoRotate) AutoRotate.teardown();
   if (window.Bloom) Bloom.teardown();
   if (window.Warp) Warp.teardown();
   if (window.SpaceFx) SpaceFx.teardown();
+  if (window.Motion) Motion.teardown();
   if (window.Instanced3d) Instanced3d.teardown();
   if (window.Plex) Plex.unmount();
   if (graph && graph._destructor) graph._destructor();
@@ -797,6 +915,7 @@ function renderGraph() {
       nodes: () => graph.graphData().nodes,
       links: () => graph.graphData().links,
       nodeColorFor, linkColorFor, nodeVal,
+      fx: themeFx,                // neon themes: photon/arrow colours + additive edges (null = stock)
       hubIds: () => state.hubs || new Set(),
       onHover: handleNodeHover,
       onClick: handleNodeClick,
@@ -810,8 +929,20 @@ function renderGraph() {
       liveDrag: () => liveDrag(graph),
       freezeForces: () => freezeForces(graph),
       unfreezeForces: () => unfreezeForces(graph),
+      allowDrag: () => !window.Modes || Modes.allowsDrag(),   // fixed-layout view modes pin nodes
+      graphFx: () => !window.Modes || Modes.graphFx(),         // view modes may hide photons/arrows/hub glow
+      nodeScale: () => (window.Modes ? Modes.nodeScale() : 1) * ((themeLook() || {}).nodeK || 1), // view modes / filament shrink node spheres
+      hideNodes: () => !!(window.Modes && Modes.drawsNodes()),  // view mode renders nodes/edges itself
     });
   }
+  if (is3d && window.Motion) Motion.install(graph, {
+    nodes: () => graph.graphData().nodes,
+    links: () => graph.graphData().links,
+    nodeVal, nodeColorFor,
+    getSettings: () => state.settings,
+  });
+  // 3D view modes (universe, ...): fixed layouts over the same instanced renderer; applies settings.viewMode
+  if (is3d && window.Modes) Modes.install(graph, { getSettings: () => state.settings, nodeColorFor, nodeVal });
   graph.onEngineStop(() => {
     unfreezeForces(graph);   // backstop only (drag end unfreezes): e.g. a remount mid-gesture
     // backstop for the live-drag alphaMin(0) window (e.g. data swap mid-gesture). MUST be
@@ -831,12 +962,14 @@ function renderGraph() {
 // Focus (Plex): TheBrain-style single-focus tiered nav — separate render surface from
 // force-graph (no physics), so it tears down any prior 2D/3D instance itself.
 function mountFocus() {
+  if (window.Modes) Modes.teardown();
   if (window.Glow3d) Glow3d.teardown();
   if (window.Starfield) Starfield.teardown();
   if (window.AutoRotate) AutoRotate.teardown();
   if (window.Bloom) Bloom.teardown();
   if (window.Warp) Warp.teardown();
   if (window.SpaceFx) SpaceFx.teardown();
+  if (window.Motion) Motion.teardown();
   if (window.Instanced3d) Instanced3d.teardown();
   if (graph && graph._destructor) graph._destructor();
   graph = null;
@@ -912,6 +1045,7 @@ function applyData(d) {
   // filtered-out nodes linger as ghosts. Bloom's hub set changes too — refresh so its idle-gate
   // re-renders instead of showing a stale glow.
   if (state.mode === '3d') {
+    if (window.Modes) Modes.dataChanged();          // active view mode re-lays-out the new node set
     if (window.Instanced3d) Instanced3d.rebuild();
     if (window.Bloom) Bloom.refresh();
   }
@@ -1072,12 +1206,12 @@ function mentionLists(node) {
 }
 
 function renderSidebar(node, nb) {
-  const color = TYPE_COLORS[node.type] || '#8b9692';
+  const color = typeColor(node.type);
   const others = nb.nodes.filter((n) => n.id !== node.id);
   const ment = mentionLists(node);
   const mentionRow = (n, withBtn) =>
     `<li class="mention" data-node="${esc(n.id)}">
-       <i style="--tc:${TYPE_COLORS[n.type] || 'var(--dim)'}"></i>
+       <i style="--tc:${typeColor(n.type, 'var(--dim)')}"></i>
        <span class="mention-title">${esc(n.title || n.id)}</span>
        ${withBtn ? `<button class="mention-link" data-link="${esc(n.id)}">Link</button>` : ''}</li>`;
   const relOf = (id) => {
@@ -1102,7 +1236,7 @@ function renderSidebar(node, nb) {
       `<li><a href="${esc(u.url)}" target="_blank" rel="noopener">${esc(u.label || u.url)}</a>
        <span class="kind">${esc(u.kind || 'web')}</span></li>`).join('')}</ul>` : ''}
     ${others.length ? `<h3><span>neighbors</span><span class="scount">${String(others.length).padStart(2, '0')}</span></h3><ul class="neighbors">${others.map((n, i) =>
-      `<li class="neighbor" data-node="${esc(n.id)}" style="--type-c:${TYPE_COLORS[n.type] || 'var(--dim)'};--i:${i}">
+      `<li class="neighbor" data-node="${esc(n.id)}" style="--type-c:${typeColor(n.type, 'var(--dim)')};--i:${i}">
          <span class="tree">${i === others.length - 1 ? '└─' : '├─'}</span>
          <span class="ntitle">${esc(n.title)}</span> <span class="mono dim">${esc(relOf(n.id))}</span></li>`).join('')}</ul>` : ''}
     ${ment.linked.length ? `<h3><span>linked mentions</span><span class="scount">${String(ment.linked.length).padStart(2, '0')}</span></h3><ul class="mentions">${ment.linked.map((n) =>
@@ -1188,7 +1322,7 @@ function renderSidebar(node, nb) {
     $('#lk-results').innerHTML = results
       .filter((r) => r.id !== node.id)
       .map((r) => `<li data-node="${esc(r.id)}">
-        <i style="--tc:${TYPE_COLORS[r.type] || 'var(--dim)'}"></i>${esc(r.title)}</li>`)
+        <i style="--tc:${typeColor(r.type, 'var(--dim)')}"></i>${esc(r.title)}</li>`)
       .join('');
   }, 200);
   $('#lk-results').onclick = async (e) => {
@@ -1271,7 +1405,7 @@ $('#tag-filter').addEventListener('input', debounce(() => {
 const chipsEl = $('#type-chips');
 chipsEl.innerHTML = TYPES.map((t) =>
   `<button class="chip" data-type="${t}" aria-pressed="false">
-     <span class="tlab"><i class="tport" style="--tc:${TYPE_COLORS[t]}"></i>${t}</span>
+     <span class="tlab"><i class="tport" style="--tc:${typeColor(t)}"></i>${t}</span>
      <span class="track"><span class="bar"></span></span>
    </button>`).join('');
 // The chip row scrolls without a scrollbar; style.css fades its right edge so the hidden
@@ -1417,7 +1551,7 @@ function qsRender(q) {
   qsState.sel = 0;
   $('#sw-results').innerHTML = qsState.items.map((n, i) =>
     `<li class="${i === 0 ? 'sel' : ''}" data-node="${esc(n.id)}">
-       <i style="--tc:${TYPE_COLORS[n.type] || 'var(--dim)'}"></i>
+       <i style="--tc:${typeColor(n.type, 'var(--dim)')}"></i>
        <span class="sw-title">${esc(n.title || n.id)}</span>
        <span class="mono dim">${esc(n.id)}</span></li>`).join('');
 }
@@ -1471,6 +1605,8 @@ function onSettingChange(kind) {
     if (state.mode === '3d' && window.Bloom) Bloom.refresh();
     if (state.mode === '3d' && window.Warp) Warp.refresh();
     if (state.mode === '3d' && window.SpaceFx) SpaceFx.refresh();
+    if (state.mode === '3d' && window.Motion) Motion.refresh();
+    if (state.mode === '3d' && window.AutoRotate) AutoRotate.refresh();   // autoTour suspends the auto-orbit
   }
 }
 
@@ -1492,6 +1628,27 @@ const TOGGLES = [
   ['Ambient', 'ambient', 'visual'],
   ['Recall firing', 'recallFire', 'visual'],
 ];
+// Look → glow: scales the 3D selective bloom (bloom.js). 0 = no bloom added, 0.5 = the original look.
+const GLOW_RANGE = ['Glow', 'glow', 0, 1, 0.05, 'visual'];
+// Look → motion (3D, motion.js): four independent effects, all default off
+const MOTION_TOGGLES = [
+  ['Link pulses', 'linkPulses', 'visual'],
+  ['Alive drift', 'aliveDrift', 'visual'],
+  ['Orbit rings', 'orbitRings', 'visual'],
+  ['Auto tour', 'autoTour', 'visual'],
+];
+// Look → alive drift can be vetoed by Motion.setDriftAllowed (fixed-layout view modes pin every node):
+// the toggle renders disabled + the reason note; the saved aliveDrift preference is left untouched
+function syncDriftToggle() {
+  const el = $('#settings .seg-toggle[data-key="aliveDrift"]'), note = $('#settings .seg-note[data-note="aliveDrift"]');
+  if (!el || !note) return;
+  const d = window.Motion ? Motion.driftState() : { allowed: true, reason: '' };
+  el.disabled = !d.allowed;
+  el.title = d.allowed ? '' : d.reason;
+  note.textContent = d.reason || 'paused';
+  note.hidden = d.allowed;
+}
+window.addEventListener('motion:drift', syncDriftToggle);
 
 function renderSettings() {
   const s = state.settings;
@@ -1500,15 +1657,23 @@ function renderSettings() {
     <input type="range" data-key="${key}" data-kind="${kind}" min="${min}" max="${max}" step="${step}" value="${s[key]}">`;
   const toggleRow = ([label, key, kind]) => `
     <button class="seg-toggle ${s[key] ? 'on' : ''}" data-key="${key}" data-kind="${kind}">${label} <b>${s[key] ? 'on' : 'off'}</b></button>`;
+  const themeOpt = (k) => `
+        <button class="theme-opt ${s.theme === k ? 'on' : ''}" data-theme="${k}">
+          <span class="sw" style="--tbg:${THEMES[k]['--bg']};--tac:${THEMES[k]['--green']}"></span>${THEME_NAMES[k]}
+        </button>`;
   $('#settings').innerHTML = `
     <button class="close" id="set-close"><svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg></button>
     <h2>settings</h2>
-    <h3><span>theme</span></h3>
-    <div class="panel theme-list">
-      ${Object.keys(THEMES).map((k) => `
-        <button class="theme-opt ${s.theme === k ? 'on' : ''}" data-theme="${k}">
-          <span class="sw" style="--tbg:${THEMES[k]['--bg']};--tac:${THEMES[k]['--green']}"></span>${THEME_NAMES[k]}
-        </button>`).join('')}
+    <h3><span>look</span></h3>
+    <div class="panel look-panel">
+      <label>theme</label>
+      <div class="theme-list">${Object.keys(THEMES).filter((k) => !NEON_LOOKS[k]).map(themeOpt).join('')}</div>
+      <label>neon</label>
+      <div class="theme-list">${Object.keys(NEON_LOOKS).map(themeOpt).join('')}</div>
+      ${rangeRow(GLOW_RANGE)}
+      <label>motion <span class="dim">(3D)</span></label>
+      ${MOTION_TOGGLES.map((t) => toggleRow(t) + (t[1] === 'aliveDrift' ? '<div class="seg-note" data-note="aliveDrift" hidden></div>' : '')).join('')}
+      ${window.Modes ? Modes.pickerHtml(s.viewMode) : ''}
     </div>
     <h3><span>physics</span></h3>
     <div class="panel">
@@ -1546,6 +1711,9 @@ function renderSettings() {
     if (state.mode === '3d' && window.Bloom) Bloom.refresh();
     if (state.mode === '3d' && window.Warp) Warp.refresh();
     if (state.mode === '3d' && window.SpaceFx) SpaceFx.refresh();
+    if (state.mode === '3d' && window.Motion) Motion.refresh();
+    if (state.mode === '3d' && window.AutoRotate) AutoRotate.refresh();
+    if (window.Modes) Modes.sync();
   };
   $('#settings').querySelectorAll('input[type=range]').forEach((el) => {
     el.oninput = () => {
@@ -1581,6 +1749,11 @@ function renderSettings() {
       state.settings.theme = b.dataset.theme;
       saveSettings(); applyTheme(state.settings.theme); renderSettings();
     };
+  });
+  syncDriftToggle();
+  if (window.Modes) Modes.bindPicker($('#settings'), (v) => {
+    state.settings.viewMode = v;
+    saveSettings(); renderSettings(); Modes.sync();
   });
 }
 
