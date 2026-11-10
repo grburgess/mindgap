@@ -605,13 +605,17 @@
     document.body.appendChild(hud);
     paintHud();
   }
+  // write a label only when it changes: WebKit (Safari, iTerm's browser) drops a click whose text node
+  // was replaced between mousedown and mouseup, and paintHud runs at 10 Hz — rewriting an unchanged
+  // button label ate most real clicks there (Chrome tolerates it)
+  function setText(e, s) { if (e.textContent !== s) e.textContent = s; }
   function paintHud() {
     if (!hud || !st) return;
-    hudEl.play.textContent = st.playing ? '⏸' : '▶';
-    hudEl.speed.textContent = st.speed + '×';
+    setText(hudEl.play, st.playing ? '⏸' : '▶');
+    setText(hudEl.speed, st.speed + '×');
     // loop reads as a real toggle: filled pill + icon when on (a text-colour change alone was invisible)
     const on = !!st.loop, L = hudEl.loop;
-    L.textContent = on ? '↻ loop on' : '↻ loop';
+    setText(L, on ? '↻ loop on' : '↻ loop');
     L.setAttribute('aria-pressed', on ? 'true' : 'false');
     L.style.background = on ? 'var(--green)' : 'transparent';
     L.style.borderColor = on ? 'var(--green)' : 'var(--line)';
