@@ -389,3 +389,51 @@ class TestGenesisSlicedCharge(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# HUD under a minimal fake DOM: counts every textContent write per [data-g] element. WebKit (Safari,
+# iTerm's browser) drops a click when the text node under the cursor is replaced between mousedown and
+# mouseup, so a 10 Hz repaint that rewrites an unchanged button label eats real clicks.
+FAKE_DOM = r"""
+const writes = {}, els = {};
+function el(tag) {
+  const e = { tagName: tag, style: {}, dataset: {}, _t: '', attrs: {}, _kids: [],
+    setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, remove() {},
+    get textContent() { return this._t; },
+    set textContent(v) { const k = this.dataset.g; if (k) writes[k] = (writes[k] || 0) + 1; this._t = String(v); },
+    set innerHTML(h) { this._kids = [...h.matchAll(/data-g="(\w+)"/g)].map((m) => { const k = el('X'); k.dataset.g = m[1]; els[m[1]] = k; return k; }); },
+    querySelectorAll() { return this._kids; } };
+  return e;
+}
+global.window = global; global.document = { hidden: false, body: { appendChild() {} }, createElement: el, getElementById: () => null };
+"""
+HUD_HARNESS = HARNESS.replace("global.window = global; global.document = { hidden: false };", FAKE_DOM, 1)
+HUD_HARNESS = HUD_HARNESS[:HUD_HARNESS.index("const out = {")] + r"""
+frames(30, 1000 / 60);
+const before = { ...writes };
+frames(120, 1000 / 60);                                  // ~2 s of playing: ~20 HUD repaints
+const during = { ...writes };
+els.loop.onclick(); frames(30, 1000 / 60);
+process.stdout.write(JSON.stringify({ before, during, after: { ...writes }, loopText: els.loop.textContent }));
+"""
+
+
+@unittest.skipUnless(shutil.which("node"), "node not installed")
+class TestGenesisHudClicks(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        r = subprocess.run(["node", "-e", HUD_HARNESS, "x", str(WEB)], capture_output=True, text=True, timeout=60)
+        if r.returncode:
+            raise AssertionError(r.stderr)
+        cls.out = json.loads(r.stdout)
+
+    def test_repaint_ran(self):
+        self.assertGreater(self.out["during"]["date"], self.out["before"]["date"])
+
+    def test_unchanged_button_labels_not_rewritten(self):
+        for k in ("play", "speed", "loop"):
+            self.assertEqual(self.out["during"].get(k), self.out["before"].get(k), k)
+
+    def test_loop_click_still_relabels(self):
+        self.assertEqual(self.out["loopText"], "↻ loop on")
+        self.assertEqual(self.out["after"]["loop"], self.out["during"]["loop"] + 1)
